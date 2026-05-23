@@ -1,23 +1,19 @@
 // ============================================================
 // Service Worker — ITGAM WasteAI
-// Cachea el modelo y la app para uso offline
 // ============================================================
 
-const CACHE_NAME = 'wasteai-v1';
+const CACHE_NAME = 'wasteai-v2';
 const ASSETS = [
     '/',
     '/index.html',
     '/manifest.json',
     '/model/model.json'
-    // Los shards del modelo se cachean dinámicamente
 ];
 
-// Instalar — cachear assets esenciales
 self.addEventListener('install', (e) => {
     e.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
             return cache.addAll(ASSETS).catch(() => {
-                // Si falla algún asset, continuar sin error
                 console.log('Algunos assets no se pudieron cachear');
             });
         })
@@ -25,7 +21,6 @@ self.addEventListener('install', (e) => {
     self.skipWaiting();
 });
 
-// Activar — limpiar caches viejos
 self.addEventListener('activate', (e) => {
     e.waitUntil(
         caches.keys().then((keys) => {
@@ -37,22 +32,14 @@ self.addEventListener('activate', (e) => {
     self.clients.claim();
 });
 
-// Fetch — cache first para modelo, network first para API
-self.addEventListener('fetch', event => {
-    // No interceptar POST (llamadas a API)
-    if (event.request.method !== 'GET') return;
-    
-    // ... resto del código que ya tienes
-});
 self.addEventListener('fetch', (e) => {
+    // No interceptar POST ni llamadas a API
+    if (e.request.method !== 'GET') return;
+    if (e.request.url.includes('/api/')) return;
+
     const url = new URL(e.request.url);
 
-    // Las llamadas a Gemini API siempre van a la red
-    if (url.hostname.includes('generativelanguage.googleapis.com')) {
-        return;
-    }
-
-    // Los archivos del modelo se cachean (son grandes, no cambian)
+    // Archivos del modelo — cache first
     if (url.pathname.startsWith('/model/')) {
         e.respondWith(
             caches.match(e.request).then((cached) => {
