@@ -813,18 +813,19 @@ async function clasificarLocal() {
 }
 // GEMINI VISION — Confirmación
 async function clasificarGemini(base64Img) {
+    if (!base64Img || base64Img.length < 1000) return null;
     try {
         const res = await fetch('/api/gemini', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tipo: 'vision', base64Img })
         });
+        if (!res.ok) return null;
         const data = await res.json();
         const CLASES = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
         const clase = data.texto?.trim() || null;
         return CLASES.includes(clase) ? clase : null;
     } catch (err) {
-        console.error('Error Gemini Vision:', err);
         return null;
     }
 }
