@@ -616,7 +616,7 @@
 // ============================================================
 
 // ⚠️ REEMPLAZA ESTO CON TU API KEY DE GEMINI (aistudio.google.com)
-const GEMINI_API_KEY = 'AIzaSyDtexZE_tKMgWqbJ98_PgmLMlmIaO09TXo';
+const GEMINI_API_KEY = '';
 
 // Clases del modelo (orden de ImageFolder — alfabético)
 const CLASES_MODELO = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
@@ -811,78 +811,35 @@ async function clasificarLocal() {
         };
     });
 }
-// ============================================================
 // GEMINI VISION — Confirmación
-// ============================================================
 async function clasificarGemini(base64Img) {
     try {
-        const res = await fetch(GEMINI_URL, {
+        const res = await fetch('/api/gemini', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [
-                        {
-                            inline_data: {
-                                mime_type: 'image/jpeg',
-                                data: base64Img
-                            }
-                        },
-                        {
-                            text: `Eres un clasificador de residuos para el Instituto Tecnológico de Gustavo A. Madero (ITGAM) en la Ciudad de México.
-
-Observa esta imagen y clasifica el residuo en EXACTAMENTE una de estas 4 categorías:
-- organico (restos de comida, plantas, papel sucio de comida)
-- inorganico_reciclable (plástico, vidrio, metal, cartón limpio, papel limpio)
-- no_aprovechable (colillas, chicles, papel higiénico, envolturas metalizadas, residuos sanitarios)
-- peligroso (pilas, baterías, medicamentos, productos químicos, electrónicos)
-
-Responde ÚNICAMENTE con el nombre de la categoría, sin explicación ni puntuación.`
-                        }
-                    ]
-                }]
-            })
+            body: JSON.stringify({ tipo: 'vision', base64Img })
         });
-
         const data = await res.json();
-        const texto = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toLowerCase() || '';
-
-        // Buscar la clase en la respuesta
-        const claseGemini = CLASES_MODELO.find(c => texto.includes(c));
-        return claseGemini || null;
-
+        const texto = data.texto?.toLowerCase() || '';
+        const CLASES_MODELO = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
+        return CLASES_MODELO.find(c => texto.includes(c)) || null;
     } catch (err) {
         console.error('Error Gemini Vision:', err);
         return null;
     }
 }
 
-// ============================================================
-// GEMINI TEXTO — Dato curioso + Consejo
-// ============================================================
+// GEMINI TEXTO — Dato curioso
 async function obtenerDatoCurioso(clase) {
     try {
-        const nombre = NOMBRES_CLASE[clase];
-        const res = await fetch(GEMINI_URL, {
+        const res = await fetch('/api/gemini', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{
-                    parts: [{
-                        text: `Para un residuo clasificado como "${nombre}" en una institución educativa de la Ciudad de México:
-Genera EN ESPAÑOL un dato curioso breve y un consejo de reciclaje.
-Máximo 2 oraciones en total. Sé conciso, educativo y usa un tono amigable.
-No uses emojis ni viñetas. Solo texto corrido.`
-                    }]
-                }]
-            })
+            body: JSON.stringify({ tipo: 'dato', clase })
         });
-
         const data = await res.json();
-        return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-
+        return data.texto || 'No se pudo obtener información adicional.';
     } catch (err) {
-        console.error('Error Gemini Texto:', err);
         return 'No se pudo obtener información adicional.';
     }
 }
