@@ -12,29 +12,24 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist/tf-backend-wasm.min.js"></script>
+
+    <!-- ONNX Runtime Web — corre modelos PyTorch directo en el browser -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.0/dist/ort.min.js"></script>
+
     <style>
-        /* ============================== */
-        /* VARIABLES Y RESET              */
-        /* ============================== */
         :root {
             --bg-primary: #06060e;
             --bg-secondary: #0c0c1a;
             --bg-card: #111128;
             --cyan: #00e5ff;
             --cyan-dim: #00e5ff44;
-            --cyan-glow: 0 0 20px #00e5ff66, 0 0 40px #00e5ff22;
             --text-primary: #e8eaf6;
             --text-secondary: #9fa8da;
             --text-dim: #5c6bc0;
-
-            /* Colores contenedores — NADF-024 (cambiables) */
             --color-organico: #2E7D32;
             --color-reciclable: #616161;
             --color-no-aprovechable: #212121;
             --color-peligroso: #C62828;
-
             --font-display: 'Orbitron', monospace;
             --font-body: 'Exo 2', sans-serif;
         }
@@ -51,15 +46,13 @@
             user-select: none;
         }
 
-        /* ============================== */
-        /* PANTALLA DE CARGA              */
-        /* ============================== */
+        /* ====== PANTALLA DE CARGA ====== */
         #pantalla-carga {
             position: fixed; inset: 0; z-index: 1000;
             background: var(--bg-primary);
             display: flex; flex-direction: column;
             align-items: center; justify-content: center;
-            gap: 24px;
+            gap: 20px;
             transition: opacity 0.6s, visibility 0.6s;
         }
         #pantalla-carga.oculto { opacity: 0; visibility: hidden; pointer-events: none; }
@@ -81,7 +74,6 @@
         .barra-progreso-fill {
             height: 100%; width: 0%;
             background: linear-gradient(90deg, var(--cyan), #7c4dff);
-            border-radius: 2px;
             transition: width 0.3s;
         }
 
@@ -91,17 +83,15 @@
             letter-spacing: 1px;
         }
 
-        /* ============================== */
-        /* LAYOUT PRINCIPAL               */
-        /* ============================== */
+        /* ====== LAYOUT ====== */
         #app {
             width: 100%; height: 100%;
             display: grid;
-            grid-template-rows: 48px 1fr auto auto;
+            grid-template-rows: 44px 1fr auto auto;
             background: var(--bg-primary);
         }
 
-        /* --- Header --- */
+        /* Header */
         #header {
             display: flex;
             align-items: center;
@@ -109,42 +99,40 @@
             padding: 0 16px;
             background: var(--bg-secondary);
             border-bottom: 1px solid var(--cyan-dim);
+            z-index: 5;
         }
 
         #header .logo {
             font-family: var(--font-display);
-            font-size: 14px;
+            font-size: 13px;
             letter-spacing: 2px;
             color: var(--cyan);
         }
-
         #header .logo span {
             color: var(--text-secondary);
             font-weight: 400;
             font-family: var(--font-body);
-            font-size: 11px;
+            font-size: 10px;
             margin-left: 8px;
             letter-spacing: 0.5px;
         }
 
-        #header .controles {
-            display: flex; gap: 8px;
-        }
+        #header .controles { display: flex; gap: 6px; }
 
         .btn-icono {
-            width: 36px; height: 36px;
+            width: 34px; height: 34px;
             border: 1px solid var(--cyan-dim);
             border-radius: 8px;
             background: transparent;
             color: var(--text-secondary);
-            font-size: 18px;
+            font-size: 16px;
             cursor: pointer;
             display: flex; align-items: center; justify-content: center;
-            transition: all 0.2s;
+            transition: all 0.15s;
         }
-        .btn-icono:active { background: var(--cyan-dim); color: var(--cyan); }
+        .btn-icono:active { background: var(--cyan-dim); color: var(--cyan); transform: scale(0.92); }
 
-        /* --- Zona de cámara --- */
+        /* Zona cámara */
         #zona-camara {
             position: relative;
             overflow: hidden;
@@ -154,11 +142,12 @@
         #video-camara {
             width: 100%; height: 100%;
             object-fit: cover;
+            display: block;
         }
 
         #canvas-captura { display: none; }
 
-        /* Overlay de scan */
+        /* Scan overlay */
         #scan-overlay {
             position: absolute; inset: 0;
             pointer-events: none;
@@ -175,71 +164,39 @@
             box-shadow: 0 0 15px var(--cyan), 0 0 30px var(--cyan);
             animation: scan 1.2s ease-in-out infinite;
         }
+        @keyframes scan { 0% { top: 0; } 100% { top: 100%; } }
 
-        @keyframes scan {
-            0% { top: 0; }
-            100% { top: 100%; }
-        }
-
-        #scan-overlay .esquinas {
-            position: absolute; inset: 15%;
-            border: 2px solid transparent;
-        }
-        #scan-overlay .esquinas::before,
-        #scan-overlay .esquinas::after {
-            content: '';
+        .esquina {
             position: absolute;
-            width: 30px; height: 30px;
+            width: 24px; height: 24px;
             border-color: var(--cyan);
             border-style: solid;
         }
-        #scan-overlay .esquinas::before {
-            top: 0; left: 0;
-            border-width: 2px 0 0 2px;
-        }
-        #scan-overlay .esquinas::after {
-            bottom: 0; right: 0;
-            border-width: 0 2px 2px 0;
-        }
-        #scan-overlay .esquina-tr,
-        #scan-overlay .esquina-bl {
-            position: absolute;
-            width: 30px; height: 30px;
-            border-color: var(--cyan);
-            border-style: solid;
-        }
-        #scan-overlay .esquina-tr {
-            top: 15%; right: 15%;
-            border-width: 2px 2px 0 0;
-        }
-        #scan-overlay .esquina-bl {
-            bottom: 15%; left: 15%;
-            border-width: 0 0 2px 2px;
-        }
+        .esq-tl { top: 12%; left: 12%; border-width: 2px 0 0 2px; }
+        .esq-tr { top: 12%; right: 12%; border-width: 2px 2px 0 0; }
+        .esq-bl { bottom: 12%; left: 12%; border-width: 0 0 2px 2px; }
+        .esq-br { bottom: 12%; right: 12%; border-width: 0 2px 2px 0; }
 
-        /* Resultado flotante sobre cámara */
+        /* Resultado */
         #resultado-overlay {
             position: absolute;
-            top: 12px; left: 12px; right: 12px;
-            background: #06060ecc;
+            top: 10px; left: 10px; right: 10px;
+            background: #06060edd;
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
             border: 1px solid var(--cyan-dim);
             border-radius: 12px;
-            padding: 12px 16px;
+            padding: 12px 14px;
             opacity: 0;
-            transform: translateY(-20px);
+            transform: translateY(-16px);
             transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
             z-index: 10;
         }
-        #resultado-overlay.visible {
-            opacity: 1;
-            transform: translateY(0);
-        }
+        #resultado-overlay.visible { opacity: 1; transform: translateY(0); }
 
         .resultado-clase {
             font-family: var(--font-display);
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 700;
             letter-spacing: 1px;
         }
@@ -247,95 +204,78 @@
         .resultado-meta {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             margin-top: 4px;
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-secondary);
         }
+        .resultado-meta .confianza { font-weight: 600; }
 
-        .resultado-meta .confianza {
-            font-weight: 600;
-        }
-
-        .resultado-meta .badge {
+        .badge {
             padding: 2px 8px;
             border-radius: 4px;
-            font-size: 10px;
-            font-weight: 600;
+            font-size: 9px;
+            font-weight: 700;
             letter-spacing: 0.5px;
         }
         .badge-alta { background: #1b5e2044; color: #66bb6a; border: 1px solid #66bb6a44; }
         .badge-gemini { background: #4a148c33; color: #ce93d8; border: 1px solid #ce93d844; }
 
         .resultado-dato {
-            margin-top: 8px;
-            font-size: 12px;
+            margin-top: 6px;
+            font-size: 11px;
             color: var(--text-secondary);
             line-height: 1.5;
             font-style: italic;
         }
 
-        /* --- Botón clasificar --- */
+        /* Botón */
         #zona-boton {
             padding: 8px 16px;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 16px;
             background: var(--bg-secondary);
         }
 
         #btn-clasificar {
             flex: 1;
-            max-width: 420px;
-            height: 44px;
-            border: none;
+            max-width: 460px;
+            height: 46px;
+            border: 1px solid var(--cyan-dim);
             border-radius: 10px;
             font-family: var(--font-display);
             font-size: 14px;
             font-weight: 700;
             letter-spacing: 3px;
             cursor: pointer;
-            position: relative;
-            overflow: hidden;
             background: linear-gradient(135deg, #0d47a1, #1a237e);
             color: var(--cyan);
-            border: 1px solid var(--cyan-dim);
-            transition: all 0.3s;
+            transition: all 0.15s;
+            position: relative;
+            overflow: hidden;
         }
-        #btn-clasificar:active {
-            transform: scale(0.97);
-        }
+        #btn-clasificar:active:not(.analizando) { transform: scale(0.96); }
         #btn-clasificar.analizando {
             background: linear-gradient(135deg, #004d40, #00695c);
             pointer-events: none;
+            opacity: 0.8;
         }
-        #btn-clasificar::after {
-            content: '';
-            position: absolute;
-            inset: -2px;
-            border-radius: 12px;
-            background: linear-gradient(135deg, var(--cyan), #7c4dff);
-            z-index: -1;
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-        #btn-clasificar:hover::after { opacity: 0.3; }
 
-        /* Input file oculto */
+        /* Input galería */
         #input-galeria { display: none; }
 
-        /* --- Contenedores --- */
+        /* Contenedores */
         #zona-contenedores {
-            padding: 6px 12px 12px;
+            padding: 4px 10px 10px;
             background: var(--bg-primary);
-            border-top: 1px solid #ffffff0a;
+            border-top: 1px solid #ffffff08;
         }
 
         .contenedores-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 8px;
+            gap: 6px;
             max-width: 800px;
             margin: 0 auto;
         }
@@ -344,14 +284,13 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 4px;
-            padding: 6px 4px;
+            gap: 3px;
+            padding: 5px 3px;
             border-radius: 10px;
             border: 2px solid transparent;
             position: relative;
             transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
-
         .contenedor-item.activo {
             border-color: var(--color-activo);
             background: var(--glow-bg);
@@ -359,18 +298,15 @@
         }
 
         .contenedor-icono {
-            width: 36px; height: 40px;
-            border-radius: 6px;
+            width: 32px; height: 36px;
+            border-radius: 5px;
             border: 2px solid;
             position: relative;
-            transition: all 0.4s;
         }
-
-        /* Forma de contenedor con tapa */
         .contenedor-icono::before {
             content: '';
             position: absolute;
-            top: -4px; left: 4px; right: 4px;
+            top: -4px; left: 3px; right: 3px;
             height: 4px;
             border-radius: 2px 2px 0 0;
             background: inherit;
@@ -380,35 +316,30 @@
         }
 
         .contenedor-label {
-            font-size: 9px;
+            font-size: 8px;
             font-weight: 600;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.3px;
             text-align: center;
             text-transform: uppercase;
             color: var(--text-dim);
             transition: color 0.3s;
             line-height: 1.2;
         }
-        .contenedor-item.activo .contenedor-label {
-            color: var(--text-primary);
-        }
+        .contenedor-item.activo .contenedor-label { color: var(--text-primary); }
 
-        /* Flecha indicadora */
         .contenedor-flecha {
             position: absolute;
-            top: -22px;
+            top: -20px;
             left: 50%;
             transform: translateX(-50%);
-            font-size: 20px;
+            font-size: 18px;
             color: var(--cyan);
             opacity: 0;
             transition: opacity 0.3s;
             filter: drop-shadow(0 0 6px var(--cyan));
             animation: flecha-bounce 0.8s ease-in-out infinite;
         }
-        .contenedor-item.activo .contenedor-flecha {
-            opacity: 1;
-        }
+        .contenedor-item.activo .contenedor-flecha { opacity: 1; }
 
         @keyframes flecha-bounce {
             0%, 100% { transform: translateX(-50%) translateY(0); }
@@ -416,170 +347,83 @@
         }
 
         /* Colores individuales */
-        .cont-organico .contenedor-icono {
-            border-color: var(--color-organico);
-            background: #2E7D3222;
-        }
-        .cont-reciclable .contenedor-icono {
-            border-color: var(--color-reciclable);
-            background: #61616122;
-        }
-        .cont-no-aprv .contenedor-icono {
-            border-color: var(--color-no-aprovechable);
-            background: #42424222;
-        }
-        .cont-peligroso .contenedor-icono {
-            border-color: var(--color-peligroso);
-            background: #C6282822;
-        }
+        .cont-organico .contenedor-icono { border-color: var(--color-organico); background: #2E7D3222; }
+        .cont-reciclable .contenedor-icono { border-color: var(--color-reciclable); background: #61616122; }
+        .cont-no-aprv .contenedor-icono { border-color: var(--color-no-aprovechable); background: #42424222; }
+        .cont-peligroso .contenedor-icono { border-color: var(--color-peligroso); background: #C6282822; }
 
-        /* Estilos activos por clase */
-        .cont-organico.activo {
-            --color-activo: var(--color-organico);
-            --glow-bg: #2E7D3218;
-            --glow-shadow: 0 0 20px #2E7D3244, 0 4px 20px #2E7D3233;
-        }
-        .cont-reciclable.activo {
-            --color-activo: var(--color-reciclable);
-            --glow-bg: #61616118;
-            --glow-shadow: 0 0 20px #61616144, 0 4px 20px #61616133;
-        }
-        .cont-no-aprv.activo {
-            --color-activo: #757575;
-            --glow-bg: #42424218;
-            --glow-shadow: 0 0 20px #42424244, 0 4px 20px #42424233;
-        }
-        .cont-peligroso.activo {
-            --color-activo: var(--color-peligroso);
-            --glow-bg: #C6282818;
-            --glow-shadow: 0 0 20px #C6282844, 0 4px 20px #C6282833;
-        }
+        .cont-organico.activo { --color-activo: var(--color-organico); --glow-bg: #2E7D3218; --glow-shadow: 0 0 20px #2E7D3244, 0 4px 20px #2E7D3233; }
+        .cont-reciclable.activo { --color-activo: var(--color-reciclable); --glow-bg: #61616118; --glow-shadow: 0 0 20px #61616144, 0 4px 20px #61616133; }
+        .cont-no-aprv.activo { --color-activo: #757575; --glow-bg: #42424218; --glow-shadow: 0 0 20px #42424244, 0 4px 20px #42424233; }
+        .cont-peligroso.activo { --color-activo: var(--color-peligroso); --glow-bg: #C6282818; --glow-shadow: 0 0 20px #C6282844, 0 4px 20px #C6282833; }
 
-        /* ============================== */
-        /* FONDO DECORATIVO               */
-        /* ============================== */
-        #app::before {
-            content: '';
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background:
-                radial-gradient(ellipse at 20% 50%, #0d47a108 0%, transparent 60%),
-                radial-gradient(ellipse at 80% 20%, #4a148c06 0%, transparent 50%);
-            pointer-events: none;
-            z-index: 0;
-        }
-
-        /* ============================== */
-        /* UTILIDADES                      */
-        /* ============================== */
-        .oculto { display: none !important; }
-
-        /* Barra fina de status */
-        #status-bar {
-            position: absolute;
-            bottom: 0; left: 0; right: 0;
-            height: 2px;
-            background: transparent;
-            z-index: 20;
-        }
-        #status-bar.cargando {
-            background: linear-gradient(90deg, transparent, var(--cyan), transparent);
-            animation: status-move 1.5s ease-in-out infinite;
-        }
-        @keyframes status-move {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(100%); }
-        }
-
-        /* Modo galería preview */
+        /* Preview galería */
         #preview-galeria {
-            position: absolute;
-            inset: 0;
+            position: absolute; inset: 0;
             object-fit: contain;
             background: #000;
             z-index: 5;
             display: none;
         }
 
-        /* ============================== */
-        /* RESPONSIVE — modo retrato      */
-        /* ============================== */
         @media (orientation: portrait) {
-            #app { grid-template-rows: 48px 1fr auto auto; }
-            .contenedores-grid { gap: 6px; }
-            .contenedor-icono { width: 30px; height: 34px; }
-            .contenedor-label { font-size: 8px; }
+            .contenedor-icono { width: 28px; height: 32px; }
+            .contenedor-label { font-size: 7px; }
         }
     </style>
 </head>
 <body>
 
-<!-- ======================== -->
-<!-- PANTALLA DE CARGA        -->
-<!-- ======================== -->
+<!-- PANTALLA DE CARGA -->
 <div id="pantalla-carga">
     <h1>WASTEAI</h1>
-    <p style="color: var(--text-dim); font-size: 11px; letter-spacing: 4px; text-transform: uppercase;">
+    <p style="color: var(--text-dim); font-size: 10px; letter-spacing: 4px; text-transform: uppercase;">
         Instituto Tecnológico de Gustavo A. Madero
     </p>
     <div class="barra-progreso">
         <div class="barra-progreso-fill" id="progreso-fill"></div>
     </div>
-    <p id="estado-carga">Inicializando motor de IA...</p>
+    <p id="estado-carga">Inicializando...</p>
 </div>
 
-<!-- ======================== -->
-<!-- APP PRINCIPAL            -->
-<!-- ======================== -->
+<!-- APP -->
 <div id="app">
-
-    <!-- Header -->
     <header id="header">
-        <div class="logo">
-            WASTEAI
-            <span>ITGAM · TecNM</span>
-        </div>
+        <div class="logo">WASTEAI <span>ITGAM · TecNM</span></div>
         <div class="controles">
             <button class="btn-icono" id="btn-galeria" title="Subir foto">🖼️</button>
             <button class="btn-icono" id="btn-cambiar-camara" title="Cambiar cámara">🔄</button>
         </div>
     </header>
 
-    <!-- Zona de cámara -->
     <section id="zona-camara">
         <video id="video-camara" autoplay playsinline muted></video>
         <canvas id="canvas-captura"></canvas>
         <img id="preview-galeria" alt="Preview">
 
-        <!-- Overlay de escaneo -->
         <div id="scan-overlay">
             <div class="linea-scan"></div>
-            <div class="esquinas"></div>
-            <div class="esquina-tr"></div>
-            <div class="esquina-bl"></div>
+            <div class="esquina esq-tl"></div>
+            <div class="esquina esq-tr"></div>
+            <div class="esquina esq-bl"></div>
+            <div class="esquina esq-br"></div>
         </div>
 
-        <!-- Resultado flotante -->
         <div id="resultado-overlay">
             <div class="resultado-clase" id="res-clase"></div>
             <div class="resultado-meta">
                 <span class="confianza" id="res-confianza"></span>
                 <span class="badge" id="res-badge"></span>
             </div>
-            <div class="resultado-dato" id="res-dato">Analizando...</div>
+            <div class="resultado-dato" id="res-dato"></div>
         </div>
-
-        <div id="status-bar"></div>
     </section>
 
-    <!-- Botón clasificar -->
     <section id="zona-boton">
         <button id="btn-clasificar">CLASIFICAR</button>
         <input type="file" id="input-galeria" accept="image/*">
     </section>
 
-    <!-- Contenedores -->
     <section id="zona-contenedores">
         <div class="contenedores-grid">
             <div class="contenedor-item cont-organico" data-clase="organico">
@@ -604,32 +448,19 @@
             </div>
         </div>
     </section>
-
 </div>
 
-<!-- ======================== -->
-<!-- JAVASCRIPT               -->
-<!-- ======================== -->
 <script>
 // ============================================================
 // CONFIGURACIÓN
 // ============================================================
-
-// ⚠️ REEMPLAZA ESTO CON TU API KEY DE GEMINI (aistudio.google.com)
-const GEMINI_API_KEY = '';
-
-// Clases del modelo (orden de ImageFolder — alfabético)
 const CLASES_MODELO = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
-
-// Nombres legibles para mostrar en UI
 const NOMBRES_CLASE = {
     organico: 'ORGÁNICO',
     inorganico_reciclable: 'INORGÁNICO RECICLABLE',
     no_aprovechable: 'NO APROVECHABLE',
     peligroso: 'RESIDUO PELIGROSO'
 };
-
-// Colores de contenedores — cambia aquí si tu campus usa otros
 const COLORES_CLASE = {
     organico: '#2E7D32',
     inorganico_reciclable: '#616161',
@@ -637,13 +468,16 @@ const COLORES_CLASE = {
     peligroso: '#C62828'
 };
 
+// Normalización ImageNet (la que usó PyTorch al entrenar)
+const MEAN = [0.485, 0.456, 0.406];
+const STD  = [0.229, 0.224, 0.225];
 const IMG_SIZE = 224;
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const MODEL_PATH = 'model/wasteai_final.onnx';
 
 // ============================================================
-// ESTADO GLOBAL
+// ESTADO
 // ============================================================
-let modelo = null;
+let sesionONNX = null;
 let streamCamara = null;
 let usandoCamaraFrontal = false;
 let analizando = false;
@@ -651,54 +485,85 @@ let analizando = false;
 // ============================================================
 // ELEMENTOS DOM
 // ============================================================
-const $video       = document.getElementById('video-camara');
-const $canvas      = document.getElementById('canvas-captura');
-const $ctx         = $canvas.getContext('2d');
-const $btnClasif   = document.getElementById('btn-clasificar');
-const $btnCamara   = document.getElementById('btn-cambiar-camara');
-const $btnGaleria  = document.getElementById('btn-galeria');
-const $inputGal    = document.getElementById('input-galeria');
-const $scanOverlay = document.getElementById('scan-overlay');
-const $resOverlay  = document.getElementById('resultado-overlay');
-const $resClase    = document.getElementById('res-clase');
-const $resConf     = document.getElementById('res-confianza');
-const $resBadge    = document.getElementById('res-badge');
-const $resDato     = document.getElementById('res-dato');
-const $statusBar   = document.getElementById('status-bar');
-const $previewGal  = document.getElementById('preview-galeria');
-const $progresoFill = document.getElementById('progreso-fill');
-const $estadoCarga = document.getElementById('estado-carga');
-const $pantallaCarga = document.getElementById('pantalla-carga');
+const $ = id => document.getElementById(id);
+const $video       = $('video-camara');
+const $canvas      = $('canvas-captura');
+const $ctx         = $canvas.getContext('2d', { willReadFrequently: true });
+const $btnClasif   = $('btn-clasificar');
+const $btnCamara   = $('btn-cambiar-camara');
+const $btnGaleria  = $('btn-galeria');
+const $inputGal    = $('input-galeria');
+const $scanOverlay = $('scan-overlay');
+const $resOverlay  = $('resultado-overlay');
+const $resClase    = $('res-clase');
+const $resConf     = $('res-confianza');
+const $resBadge    = $('res-badge');
+const $resDato     = $('res-dato');
+const $previewGal  = $('preview-galeria');
+const $progresoFill = $('progreso-fill');
+const $estadoCarga = $('estado-carga');
+const $pantallaCarga = $('pantalla-carga');
 
 // ============================================================
 // INICIALIZACIÓN
 // ============================================================
 async function inicializar() {
     try {
-        tf.env().set('WEBGL_VERSION', 1)
-        await tf.ready();
-        await tf.setBackend('cpu');
-        await tf.ready();
-        await tf.env().set('WEBGL_CPU_FORWARD', false);
-        // Paso 1: Cargar modelo TFJS
-        actualizarCarga('Descargando modelo de IA...', 10);
-        modelo = await tf.loadGraphModel('model/model.json', {
-            onProgress: (frac) => actualizarCarga('Descargando modelo de IA...', 10 + frac * 60)
+        // Configurar ONNX Runtime — usar WASM (funciona en todos los dispositivos)
+        ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.0/dist/';
+
+        actualizarCarga('Descargando modelo de IA...', 5);
+
+        // Descargar modelo con indicador de progreso
+        const response = await fetch(MODEL_PATH);
+        if (!response.ok) throw new Error('No se encontró el modelo ONNX');
+
+        const contentLength = parseInt(response.headers.get('Content-Length') || '0');
+        const reader = response.body.getReader();
+        const chunks = [];
+        let bytesRecibidos = 0;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            bytesRecibidos += value.length;
+            if (contentLength > 0) {
+                const pct = Math.min(70, (bytesRecibidos / contentLength) * 70);
+                actualizarCarga(`Descargando modelo... ${(bytesRecibidos / 1024 / 1024).toFixed(1)} MB`, pct);
+            }
+        }
+
+        // Ensamblar buffer
+        const modelBuffer = new Uint8Array(bytesRecibidos);
+        let offset = 0;
+        for (const chunk of chunks) {
+            modelBuffer.set(chunk, offset);
+            offset += chunk.length;
+        }
+
+        actualizarCarga('Cargando modelo en memoria...', 75);
+
+        // Crear sesión ONNX
+        sesionONNX = await ort.InferenceSession.create(modelBuffer.buffer, {
+            executionProviders: ['wasm'],
+            graphOptimizationLevel: 'all'
         });
-        actualizarCarga('Modelo cargado ✓', 75);
 
-        // Paso 2: Warmup — primera inferencia es lenta
-        // Warmup
-        // Warmup
-        tf.tidy(() => modelo.execute(tf.zeros([1, IMG_SIZE, IMG_SIZE, 3])));
-        actualizarCarga('Motor listo ✓', 90);
+        actualizarCarga('Calentando motor...', 85);
 
-        // Paso 3: Iniciar cámara
-        actualizarCarga('Activando cámara...', 95);
+        // Warmup — primera inferencia siempre es lenta
+        const dummy = new ort.Tensor('float32', new Float32Array(1 * 3 * IMG_SIZE * IMG_SIZE), [1, 3, IMG_SIZE, IMG_SIZE]);
+        const warmupResult = await sesionONNX.run({ input: dummy });
+        // Verificar que la salida tiene 4 clases
+        const outputName = Object.keys(warmupResult)[0];
+        const outputData = warmupResult[outputName].data;
+        if (outputData.length !== 4) throw new Error(`Salida inesperada: ${outputData.length} clases`);
+
+        actualizarCarga('Activando cámara...', 92);
         await iniciarCamara();
-        actualizarCarga('¡Listo!', 100);
 
-        // Ocultar pantalla de carga
+        actualizarCarga('¡Listo!', 100);
         setTimeout(() => $pantallaCarga.classList.add('oculto'), 400);
 
     } catch (err) {
@@ -708,51 +573,44 @@ async function inicializar() {
     }
 }
 
-function actualizarCarga(texto, porcentaje) {
+function actualizarCarga(texto, pct) {
     $estadoCarga.textContent = texto;
-    $progresoFill.style.width = porcentaje + '%';
+    $progresoFill.style.width = pct + '%';
 }
 
 // ============================================================
 // CÁMARA
 // ============================================================
 async function iniciarCamara() {
-    // Detener stream anterior
-    if (streamCamara) {
-        streamCamara.getTracks().forEach(t => t.stop());
-    }
-
-    const constraints = {
-        video: {
-            facingMode: usandoCamaraFrontal ? 'user' : 'environment',
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-        },
-        audio: false
-    };
+    if (streamCamara) streamCamara.getTracks().forEach(t => t.stop());
 
     try {
-        streamCamara = await navigator.mediaDevices.getUserMedia(constraints);
+        streamCamara = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: usandoCamaraFrontal ? 'user' : 'environment',
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            },
+            audio: false
+        });
         $video.srcObject = streamCamara;
         $previewGal.style.display = 'none';
     } catch (err) {
-        console.error('Error al acceder a la cámara:', err);
-        alert('No se pudo acceder a la cámara. Verifica los permisos.');
+        console.error('Error cámara:', err);
     }
 }
 
 // ============================================================
-// CAPTURA DE IMAGEN
+// PREPROCESAMIENTO — crítico para precisión
 // ============================================================
-function capturarFrame() {
+function capturarYPreprocesar() {
     $canvas.width = IMG_SIZE;
     $canvas.height = IMG_SIZE;
 
-    // Si hay preview de galería, usar esa imagen
+    // Dibujar frame en canvas 224x224
     if ($previewGal.style.display === 'block') {
         $ctx.drawImage($previewGal, 0, 0, IMG_SIZE, IMG_SIZE);
     } else {
-        // Capturar del video manteniendo aspecto
         const vw = $video.videoWidth;
         const vh = $video.videoHeight;
         const min = Math.min(vw, vh);
@@ -761,143 +619,179 @@ function capturarFrame() {
         $ctx.drawImage($video, sx, sy, min, min, 0, 0, IMG_SIZE, IMG_SIZE);
     }
 
-    return $canvas;
+    // Obtener pixels RGBA
+    const imageData = $ctx.getImageData(0, 0, IMG_SIZE, IMG_SIZE);
+    const rgba = imageData.data;
+
+    // Convertir a CHW float32 con normalización ImageNet
+    // PyTorch usa formato NCHW: [batch, canales, alto, ancho]
+    const chw = new Float32Array(1 * 3 * IMG_SIZE * IMG_SIZE);
+
+    for (let y = 0; y < IMG_SIZE; y++) {
+        for (let x = 0; x < IMG_SIZE; x++) {
+            const srcIdx = (y * IMG_SIZE + x) * 4;
+            for (let c = 0; c < 3; c++) {
+                const pixel = rgba[srcIdx + c] / 255.0;
+                const normalized = (pixel - MEAN[c]) / STD[c];
+                chw[c * IMG_SIZE * IMG_SIZE + y * IMG_SIZE + x] = normalized;
+            }
+        }
+    }
+
+    return new ort.Tensor('float32', chw, [1, 3, IMG_SIZE, IMG_SIZE]);
 }
 
-function canvasABase64() {
-    // Canvas de mayor resolución para Gemini
-    const c2 = document.createElement('canvas');
-    c2.width = 512; c2.height = 512;
-    const ctx2 = c2.getContext('2d');
+function capturarBase64ParaGemini() {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
 
     if ($previewGal.style.display === 'block') {
-        ctx2.drawImage($previewGal, 0, 0, 512, 512);
+        ctx.drawImage($previewGal, 0, 0, 512, 512);
     } else {
         const vw = $video.videoWidth;
         const vh = $video.videoHeight;
         const min = Math.min(vw, vh);
-        const sx = (vw - min) / 2;
-        const sy = (vh - min) / 2;
-        ctx2.drawImage($video, sx, sy, min, min, 0, 0, 512, 512);
+        ctx.drawImage($video, (vw - min) / 2, (vh - min) / 2, min, min, 0, 0, 512, 512);
     }
 
-    return c2.toDataURL('image/jpeg', 0.8).split(',')[1];
+    return c.toDataURL('image/jpeg', 0.85).split(',')[1];
 }
 
 // ============================================================
-// INFERENCIA — EfficientNet-B0 (local)
+// INFERENCIA LOCAL — ONNX Runtime (modelo completo fine-tuneado)
 // ============================================================
 async function clasificarLocal() {
-    const canvas = capturarFrame();
+    const tensor = capturarYPreprocesar();
 
-    return tf.tidy(() => {
-        const tensor = tf.browser.fromPixels(canvas)
-            .toFloat()
-            .expandDims(0);
+    // Ejecutar inferencia
+    const resultados = await sesionONNX.run({ input: tensor });
+    const outputName = Object.keys(resultados)[0];
+    const logits = Array.from(resultados[outputName].data);
 
-        const salida = modelo.execute(tensor);
-        const probs = tf.softmax(salida);
-        const datos = probs.dataSync();
+    // Softmax
+    const maxLogit = Math.max(...logits);
+    const exps = logits.map(l => Math.exp(l - maxLogit));
+    const sumExps = exps.reduce((a, b) => a + b, 0);
+    const probs = exps.map(e => e / sumExps);
 
-        let maxIdx = 0;
-        for (let i = 1; i < datos.length; i++) {
-            if (datos[i] > datos[maxIdx]) maxIdx = i;
-        }
+    // Clase con mayor probabilidad
+    let maxIdx = 0;
+    for (let i = 1; i < probs.length; i++) {
+        if (probs[i] > probs[maxIdx]) maxIdx = i;
+    }
 
-        return {
-            clase: CLASES_MODELO[maxIdx],
-            confianza: datos[maxIdx],
-            todas: Object.fromEntries(CLASES_MODELO.map((c, i) => [c, datos[i]]))
-        };
-    });
+    return {
+        clase: CLASES_MODELO[maxIdx],
+        confianza: probs[maxIdx],
+        todas: Object.fromEntries(CLASES_MODELO.map((c, i) => [c, probs[i]]))
+    };
 }
-// GEMINI VISION — Confirmación
+
+// ============================================================
+// GEMINI — vía serverless /api/gemini
+// ============================================================
 async function clasificarGemini(base64Img) {
     if (!base64Img || base64Img.length < 1000) return null;
     try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
+
         const res = await fetch('/api/gemini', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tipo: 'vision', base64Img })
+            body: JSON.stringify({ tipo: 'vision', base64Img }),
+            signal: controller.signal
         });
+        clearTimeout(timeout);
+
         if (!res.ok) return null;
         const data = await res.json();
-        const CLASES = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
         const clase = data.texto?.trim() || null;
-        return CLASES.includes(clase) ? clase : null;
+        return CLASES_MODELO.includes(clase) ? clase : null;
     } catch (err) {
+        console.warn('Gemini no disponible:', err.message);
         return null;
     }
 }
 
-// GEMINI TEXTO — Dato curioso
 async function obtenerDatoCurioso(clase) {
     try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+
         const res = await fetch('/api/gemini', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tipo: 'dato', clase })
+            body: JSON.stringify({ tipo: 'dato', clase }),
+            signal: controller.signal
         });
+        clearTimeout(timeout);
+
         const data = await res.json();
-        return data.texto || 'No se pudo obtener información adicional.';
-    } catch (err) {
-        return 'No se pudo obtener información adicional.';
+        return data.texto || '';
+    } catch {
+        return '';
     }
 }
 
 // ============================================================
-// FLUJO DE CLASIFICACIÓN PRINCIPAL
+// FLUJO PRINCIPAL
 // ============================================================
 async function clasificar() {
-    if (analizando || !modelo) return;
+    if (analizando || !sesionONNX) return;
     analizando = true;
 
-    // UI: iniciar análisis
+    // UI inmediata — el usuario ve feedback al instante
     $btnClasif.classList.add('analizando');
     $btnClasif.textContent = 'ANALIZANDO...';
     $scanOverlay.classList.add('activo');
-    $statusBar.classList.add('cargando');
     $resOverlay.classList.remove('visible');
     limpiarContenedores();
 
-    // Capturar imagen para Gemini antes de la inferencia
-    const base64 = canvasABase64();
+    // Esperar un frame para que el browser pinte los cambios de UI
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-    // Ejecutar ambos motores en paralelo
-    const [resultadoLocal, claseGemini] = await Promise.all([
-        clasificarLocal(),
-        clasificarGemini(base64)
-    ]);
+    try {
+        // Capturar base64 para Gemini ANTES de la inferencia local
+        const base64 = capturarBase64ParaGemini();
 
-    // Determinar resultado final
-    let claseFinal = resultadoLocal.clase;
-    let confianzaFinal = resultadoLocal.confianza;
-    let concordancia = false;
+        // Ejecutar ambos motores en paralelo
+        const [resultadoLocal, claseGemini] = await Promise.all([
+            clasificarLocal(),
+            clasificarGemini(base64)
+        ]);
 
-    if (claseGemini) {
-        concordancia = (resultadoLocal.clase === claseGemini);
-        if (!concordancia) {
-            // Gemini tiene la última palabra
-            claseFinal = claseGemini;
-            confianzaFinal = resultadoLocal.todas[claseGemini] || 0;
+        // Determinar resultado final
+        let claseFinal = resultadoLocal.clase;
+        let confianzaFinal = resultadoLocal.confianza;
+        let concordancia = false;
+
+        if (claseGemini) {
+            concordancia = (resultadoLocal.clase === claseGemini);
+            if (!concordancia) {
+                claseFinal = claseGemini;
+                confianzaFinal = resultadoLocal.todas[claseGemini] || 0;
+            }
         }
+
+        // Mostrar resultado
+        $scanOverlay.classList.remove('activo');
+        mostrarResultado(claseFinal, confianzaFinal, concordancia, claseGemini, resultadoLocal.clase);
+
+        // Dato curioso — no bloquea
+        obtenerDatoCurioso(claseFinal).then(dato => {
+            if (dato) $resDato.textContent = dato;
+        });
+
+    } catch (err) {
+        console.error('Error clasificando:', err);
+        $scanOverlay.classList.remove('activo');
     }
 
-    // Detener scan
-    $scanOverlay.classList.remove('activo');
-
-    // Mostrar resultado
-    mostrarResultado(claseFinal, confianzaFinal, concordancia, claseGemini, resultadoLocal.clase);
-
-    // Obtener dato curioso (no bloquea el resultado)
-    obtenerDatoCurioso(claseFinal).then(dato => {
-        $resDato.textContent = dato;
-    });
-
-    // UI: restaurar botón
+    // Restaurar botón
     $btnClasif.classList.remove('analizando');
     $btnClasif.textContent = 'CLASIFICAR';
-    $statusBar.classList.remove('cargando');
     analizando = false;
 }
 
@@ -907,91 +801,63 @@ async function clasificar() {
 function mostrarResultado(clase, confianza, concordancia, claseGemini, claseLocal) {
     const nombre = NOMBRES_CLASE[clase] || clase.toUpperCase();
     const color = COLORES_CLASE[clase] || '#fff';
-    const porciento = (confianza * 100).toFixed(1);
+    const pct = (confianza * 100).toFixed(1);
 
-    // Texto de clase
     $resClase.textContent = nombre;
     $resClase.style.color = color;
+    $resConf.textContent = pct + '%';
 
-    // Confianza
-    $resConf.textContent = `${porciento}%`;
-
-    // Badge de concordancia
     if (claseGemini && concordancia) {
         $resBadge.textContent = '✓ ALTA CONFIANZA';
         $resBadge.className = 'badge badge-alta';
     } else if (claseGemini && !concordancia) {
-        $resBadge.textContent = `GEMINI: ${NOMBRES_CLASE[claseGemini] || ''} · LOCAL: ${NOMBRES_CLASE[claseLocal] || ''}`;
+        $resBadge.textContent = 'GEMINI CORRIGE → ' + (NOMBRES_CLASE[claseGemini] || '');
         $resBadge.className = 'badge badge-gemini';
     } else {
-        $resBadge.textContent = 'SIN VERIFICACIÓN';
+        $resBadge.textContent = 'MODELO LOCAL';
         $resBadge.className = 'badge badge-gemini';
     }
 
-    // Dato curioso — placeholder mientras carga
-    $resDato.textContent = 'Generando dato curioso...';
-
-    // Mostrar overlay
+    $resDato.textContent = '';
     $resOverlay.classList.add('visible');
-
-    // Activar contenedor correcto
     activarContenedor(clase);
 }
 
-// ============================================================
-// CONTENEDORES
-// ============================================================
 function activarContenedor(clase) {
     limpiarContenedores();
     const item = document.querySelector(`.contenedor-item[data-clase="${clase}"]`);
-    if (item) {
-        item.classList.add('activo');
-    }
+    if (item) item.classList.add('activo');
 }
 
 function limpiarContenedores() {
-    document.querySelectorAll('.contenedor-item').forEach(el => {
-        el.classList.remove('activo');
-    });
+    document.querySelectorAll('.contenedor-item').forEach(el => el.classList.remove('activo'));
 }
 
 // ============================================================
 // EVENTOS
 // ============================================================
-
-// Botón clasificar
 $btnClasif.addEventListener('click', clasificar);
 
-// Cambiar cámara
 $btnCamara.addEventListener('click', () => {
     usandoCamaraFrontal = !usandoCamaraFrontal;
     iniciarCamara();
 });
 
-// Galería
 $btnGaleria.addEventListener('click', () => $inputGal.click());
 
 $inputGal.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (ev) => {
         $previewGal.src = ev.target.result;
         $previewGal.style.display = 'block';
-
-        // Esperar a que cargue para poder clasificar
-        $previewGal.onload = () => {
-            clasificar();
-        };
+        $previewGal.onload = () => clasificar();
     };
     reader.readAsDataURL(file);
-
-    // Resetear input para permitir volver a seleccionar el mismo archivo
     e.target.value = '';
 });
 
-// Tap en cámara para volver al video si estaba en galería
 $video.addEventListener('click', () => {
     if ($previewGal.style.display === 'block') {
         $previewGal.style.display = 'none';
@@ -1005,13 +871,11 @@ $video.addEventListener('click', () => {
 // ============================================================
 inicializar();
 
-// Registrar Service Worker para PWA
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js').catch(() => {});
     });
 }
 </script>
-
 </body>
 </html>

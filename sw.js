@@ -2,12 +2,11 @@
 // Service Worker — ITGAM WasteAI
 // ============================================================
 
-const CACHE_NAME = 'wasteai-v2';
+const CACHE_NAME = 'wasteai-v3';
 const ASSETS = [
     '/',
     '/index.html',
-    '/manifest.json',
-    '/model/model.json'
+    '/manifest.json'
 ];
 
 self.addEventListener('install', (e) => {
@@ -39,7 +38,7 @@ self.addEventListener('fetch', (e) => {
 
     const url = new URL(e.request.url);
 
-    // Archivos del modelo — cache first
+    // Modelo ONNX — cache first (es grande, no cambia)
     if (url.pathname.startsWith('/model/')) {
         e.respondWith(
             caches.match(e.request).then((cached) => {
@@ -54,7 +53,7 @@ self.addEventListener('fetch', (e) => {
         return;
     }
 
-    // Todo lo demás — network first, fallback a cache
+    // Todo lo demás — network first
     e.respondWith(
         fetch(e.request)
             .then((res) => {
