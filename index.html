@@ -791,11 +791,11 @@ function canvasABase64() {
 async function clasificarLocal() {
     const canvas = capturarFrame();
 
-    const tensor = tf.browser.fromPixels(canvas)
-        .toFloat()
-        .expandDims(0);
+    return tf.tidy(() => {
+        const tensor = tf.browser.fromPixels(canvas)
+            .toFloat()
+            .expandDims(0);
 
-    const resultado = tf.tidy(() => {
         const salida = modelo.execute(tensor);
         const probs = tf.softmax(salida);
         const datos = probs.dataSync();
@@ -811,11 +811,7 @@ async function clasificarLocal() {
             todas: Object.fromEntries(CLASES_MODELO.map((c, i) => [c, datos[i]]))
         };
     });
-
-    tensor.dispose();
-    return resultado;
 }
-
 // ============================================================
 // GEMINI VISION — Confirmación
 // ============================================================
