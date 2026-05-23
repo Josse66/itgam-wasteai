@@ -820,9 +820,9 @@ async function clasificarGemini(base64Img) {
             body: JSON.stringify({ tipo: 'vision', base64Img })
         });
         const data = await res.json();
-        const texto = data.texto?.toLowerCase() || '';
-        const CLASES_MODELO = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
-        return CLASES_MODELO.find(c => texto.includes(c)) || null;
+        const CLASES = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
+        const clase = data.texto?.trim() || null;
+        return CLASES.includes(clase) ? clase : null;
     } catch (err) {
         console.error('Error Gemini Vision:', err);
         return null;
