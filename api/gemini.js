@@ -1,14 +1,12 @@
 export default async function handler(req, res) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
-    }
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) {
-        return res.status(500).json({ error: 'API key no configurada en Vercel' });
-    }
+    if (!GEMINI_API_KEY) return res.status(500).json({ error: 'Sin API key' });
 
     const { tipo, base64Img, clase } = req.body;
+
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
     let payload;
 
@@ -16,27 +14,18 @@ export default async function handler(req, res) {
         payload = {
             contents: [{
                 parts: [
-                    {
-                        inline_data: {
-                            mime_type: 'image/jpeg',
-                            data: base64Img
-                        }
-                    },
-                    {
-                        text: `Eres un clasificador de residuos para el Instituto Tecnológico de Gustavo A. Madero (ITGAM) en la Ciudad de México.
+                    { inline_data: { mime_type: 'image/jpeg', data: base64Img } },
+                    { text: `Clasifica este residuo. Responde SOLO con uno de estos números:
+1 = organico
+2 = inorganico_reciclable  
+3 = no_aprovechable
+4 = peligroso
 
-Observa esta imagen y clasifica el residuo en EXACTAMENTE una de estas 4 categorías:
-- organico (restos de comida, plantas, papel sucio de comida)
-- inorganico_reciclable (plástico, vidrio, metal, cartón limpio, papel limpio)
-- no_aprovechable (colillas, chicles, papel higiénico, envolturas metalizadas, residuos sanitarios)
-- peligroso (pilas, baterías, medicamentos, productos químicos, electrónicos)
-
-Responde ÚNICAMENTE con el nombre de la categoría, sin explicación ni puntuación.`
-                    }
+Solo el número, nada más.` }
                 ]
             }]
         };
-    } else if (tipo === 'dato') {
+    } else {
         const nombres = {
             organico: 'ORGÁNICO',
             inorganico_reciclable: 'INORGÁNICO RECICLABLE',
@@ -45,30 +34,28 @@ Responde ÚNICAMENTE con el nombre de la categoría, sin explicación ni puntuac
         };
         payload = {
             contents: [{
-                parts: [{
-                    text: `Para un residuo clasificado como "${nombres[clase]}" en una institución educativa de la Ciudad de México:
-Genera EN ESPAÑOL un dato curioso breve y un consejo de reciclaje.
-Máximo 2 oraciones en total. Sé conciso, educativo y usa un tono amigable.
-No uses emojis ni viñetas. Solo texto corrido.`
-                }]
+                parts: [{ text: `Para un residuo "${nombres[clase] || clase}" en una institución educativa en México: escribe UN dato curioso y UN consejo de reciclaje. Máximo 2 oraciones, sin emojis.` }]
             }]
         };
-    } else {
-        return res.status(400).json({ error: 'tipo inválido' });
     }
 
     try {
-        const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            }
-        );
+        const geminiRes = await fetch(GEMINI_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
 
         const data = await geminiRes.json();
         const texto = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+
+        if (tipo === 'vision') {
+            const mapa = { '1': 'organico', '2': 'inorganico_reciclable', '3': 'no_aprovechable', '4': 'peligroso' };
+            const num = texto.replace(/\D/g, '').charAt(0);
+            const clase = mapa[num] || null;
+            return res.status(200).json({ texto: clase });
+        }
+
         res.status(200).json({ texto });
 
     } catch (err) {
