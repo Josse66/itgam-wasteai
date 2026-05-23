@@ -12,8 +12,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
-    <!-- ONNX Runtime Web — corre modelos PyTorch directo en el browser -->
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.0/dist/ort.min.js"></script>
 
     <style>
@@ -91,7 +89,6 @@
             background: var(--bg-primary);
         }
 
-        /* Header */
         #header {
             display: flex;
             align-items: center;
@@ -218,8 +215,10 @@
             font-weight: 700;
             letter-spacing: 0.5px;
         }
-        .badge-alta { background: #1b5e2044; color: #66bb6a; border: 1px solid #66bb6a44; }
-        .badge-gemini { background: #4a148c33; color: #ce93d8; border: 1px solid #ce93d844; }
+        .badge-alta    { background: #1b5e2044; color: #66bb6a; border: 1px solid #66bb6a44; }
+        .badge-gemini  { background: #4a148c33; color: #ce93d8; border: 1px solid #ce93d844; }
+        .badge-ensemble{ background: #01579b33; color: #4fc3f7; border: 1px solid #4fc3f744; }
+        .badge-local   { background: #37474f44; color: #90a4ae; border: 1px solid #90a4ae44; }
 
         .resultado-dato {
             margin-top: 6px;
@@ -254,15 +253,20 @@
             transition: all 0.15s;
             position: relative;
             overflow: hidden;
+            /* Zona táctil generosa para no necesitar múltiples taps */
+            touch-action: manipulation;
         }
-        #btn-clasificar:active:not(.analizando) { transform: scale(0.96); }
-        #btn-clasificar.analizando {
+        #btn-clasificar:active:not([disabled]) {
+            transform: scale(0.96);
+            background: linear-gradient(135deg, #1565c0, #283593);
+        }
+        #btn-clasificar[disabled] {
             background: linear-gradient(135deg, #004d40, #00695c);
             pointer-events: none;
-            opacity: 0.8;
+            opacity: 0.85;
+            cursor: not-allowed;
         }
 
-        /* Input galería */
         #input-galeria { display: none; }
 
         /* Contenedores */
@@ -346,18 +350,16 @@
             50% { transform: translateX(-50%) translateY(4px); }
         }
 
-        /* Colores individuales */
-        .cont-organico .contenedor-icono { border-color: var(--color-organico); background: #2E7D3222; }
-        .cont-reciclable .contenedor-icono { border-color: var(--color-reciclable); background: #61616122; }
-        .cont-no-aprv .contenedor-icono { border-color: var(--color-no-aprovechable); background: #42424222; }
-        .cont-peligroso .contenedor-icono { border-color: var(--color-peligroso); background: #C6282822; }
+        .cont-organico   .contenedor-icono { border-color: var(--color-organico);        background: #2E7D3222; }
+        .cont-reciclable .contenedor-icono { border-color: var(--color-reciclable);       background: #61616122; }
+        .cont-no-aprv    .contenedor-icono { border-color: var(--color-no-aprovechable);  background: #42424222; }
+        .cont-peligroso  .contenedor-icono { border-color: var(--color-peligroso);        background: #C6282822; }
 
-        .cont-organico.activo { --color-activo: var(--color-organico); --glow-bg: #2E7D3218; --glow-shadow: 0 0 20px #2E7D3244, 0 4px 20px #2E7D3233; }
-        .cont-reciclable.activo { --color-activo: var(--color-reciclable); --glow-bg: #61616118; --glow-shadow: 0 0 20px #61616144, 0 4px 20px #61616133; }
-        .cont-no-aprv.activo { --color-activo: #757575; --glow-bg: #42424218; --glow-shadow: 0 0 20px #42424244, 0 4px 20px #42424233; }
-        .cont-peligroso.activo { --color-activo: var(--color-peligroso); --glow-bg: #C6282818; --glow-shadow: 0 0 20px #C6282844, 0 4px 20px #C6282833; }
+        .cont-organico.activo   { --color-activo: var(--color-organico);        --glow-bg: #2E7D3218; --glow-shadow: 0 0 20px #2E7D3244, 0 4px 20px #2E7D3233; }
+        .cont-reciclable.activo { --color-activo: var(--color-reciclable);      --glow-bg: #61616118; --glow-shadow: 0 0 20px #61616144, 0 4px 20px #61616133; }
+        .cont-no-aprv.activo    { --color-activo: #757575;                      --glow-bg: #42424218; --glow-shadow: 0 0 20px #42424244, 0 4px 20px #42424233; }
+        .cont-peligroso.activo  { --color-activo: var(--color-peligroso);       --glow-bg: #C6282818; --glow-shadow: 0 0 20px #C6282844, 0 4px 20px #C6282833; }
 
-        /* Preview galería */
         #preview-galeria {
             position: absolute; inset: 0;
             object-fit: contain;
@@ -374,7 +376,6 @@
 </head>
 <body>
 
-<!-- PANTALLA DE CARGA -->
 <div id="pantalla-carga">
     <h1>WASTEAI</h1>
     <p style="color: var(--text-dim); font-size: 10px; letter-spacing: 4px; text-transform: uppercase;">
@@ -386,7 +387,6 @@
     <p id="estado-carga">Inicializando...</p>
 </div>
 
-<!-- APP -->
 <div id="app">
     <header id="header">
         <div class="logo">WASTEAI <span>ITGAM · TecNM</span></div>
@@ -454,128 +454,163 @@
 // ============================================================
 // CONFIGURACIÓN
 // ============================================================
-const CLASES_MODELO = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
-const NOMBRES_CLASE = {
-    organico: 'ORGÁNICO',
+
+// Orden de clases — DEBE coincidir con el orden de ImageFolder (alfabético)
+// Verificado en ambos entrenamientos:
+// V1: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso']
+// V2: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso']
+const CLASES = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
+
+const NOMBRES = {
+    organico:              'ORGÁNICO',
     inorganico_reciclable: 'INORGÁNICO RECICLABLE',
-    no_aprovechable: 'NO APROVECHABLE',
-    peligroso: 'RESIDUO PELIGROSO'
+    no_aprovechable:       'NO APROVECHABLE',
+    peligroso:             'RESIDUO PELIGROSO'
 };
-const COLORES_CLASE = {
-    organico: '#2E7D32',
+
+const COLORES = {
+    organico:              '#2E7D32',
     inorganico_reciclable: '#616161',
-    no_aprovechable: '#424242',
-    peligroso: '#C62828'
+    no_aprovechable:       '#424242',
+    peligroso:             '#C62828'
 };
 
-// Normalización ImageNet (la que usó PyTorch al entrenar)
-const MEAN = [0.485, 0.456, 0.406];
-const STD  = [0.229, 0.224, 0.225];
+// Normalización ImageNet — igual a como PyTorch entrenó ambos modelos
+const MEAN    = [0.485, 0.456, 0.406];
+const STD     = [0.229, 0.224, 0.225];
 const IMG_SIZE = 224;
-const MODEL_PATH = 'model/wasteai_final.onnx';
+
+// Rutas de los dos modelos
+const PATH_V1 = 'model/wasteai_final.onnx';  // EfficientNetB0 entrenado con datasets originales
+const PATH_V2 = 'model/wasteai_v2.onnx';     // EfficientNetB0 entrenado con datasets especializados
 
 // ============================================================
-// ESTADO
+// ESTADO GLOBAL
 // ============================================================
-let sesionONNX = null;
+let sesionV1 = null;
+let sesionV2 = null;
 let streamCamara = null;
 let usandoCamaraFrontal = false;
 let analizando = false;
 
 // ============================================================
-// ELEMENTOS DOM
+// DOM
 // ============================================================
-const $ = id => document.getElementById(id);
-const $video       = $('video-camara');
-const $canvas      = $('canvas-captura');
-const $ctx         = $canvas.getContext('2d', { willReadFrequently: true });
-const $btnClasif   = $('btn-clasificar');
-const $btnCamara   = $('btn-cambiar-camara');
-const $btnGaleria  = $('btn-galeria');
-const $inputGal    = $('input-galeria');
-const $scanOverlay = $('scan-overlay');
-const $resOverlay  = $('resultado-overlay');
-const $resClase    = $('res-clase');
-const $resConf     = $('res-confianza');
-const $resBadge    = $('res-badge');
-const $resDato     = $('res-dato');
-const $previewGal  = $('preview-galeria');
-const $progresoFill = $('progreso-fill');
-const $estadoCarga = $('estado-carga');
-const $pantallaCarga = $('pantalla-carga');
+const $  = id => document.getElementById(id);
+const $video        = $('video-camara');
+const $canvas       = $('canvas-captura');
+const $ctx          = $canvas.getContext('2d', { willReadFrequently: true });
+const $btnClasif    = $('btn-clasificar');
+const $btnCamara    = $('btn-cambiar-camara');
+const $btnGaleria   = $('btn-galeria');
+const $inputGal     = $('input-galeria');
+const $scanOverlay  = $('scan-overlay');
+const $resOverlay   = $('resultado-overlay');
+const $resClase     = $('res-clase');
+const $resConf      = $('res-confianza');
+const $resBadge     = $('res-badge');
+const $resDato      = $('res-dato');
+const $previewGal   = $('preview-galeria');
+const $fill         = $('progreso-fill');
+const $estado       = $('estado-carga');
+const $carga        = $('pantalla-carga');
 
 // ============================================================
-// INICIALIZACIÓN
+// UTILIDADES
+// ============================================================
+function actualizarCarga(texto, pct) {
+    $estado.textContent = texto;
+    $fill.style.width   = pct + '%';
+}
+
+// Descarga un modelo ONNX con barra de progreso y devuelve ArrayBuffer
+async function descargarModelo(path, pctInicio, pctFin, nombre) {
+    actualizarCarga(`Descargando ${nombre}...`, pctInicio);
+    const res = await fetch(path);
+    if (!res.ok) throw new Error(`No se encontró ${path}`);
+
+    const contentLength = parseInt(res.headers.get('Content-Length') || '0');
+    const reader = res.body.getReader();
+    const chunks = [];
+    let recibidos = 0;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        recibidos += value.length;
+        if (contentLength > 0) {
+            const pct = pctInicio + ((recibidos / contentLength) * (pctFin - pctInicio));
+            actualizarCarga(
+                `Descargando ${nombre}... ${(recibidos / 1048576).toFixed(1)} MB`,
+                Math.min(pctFin, pct)
+            );
+        }
+    }
+
+    const buf = new Uint8Array(recibidos);
+    let offset = 0;
+    for (const chunk of chunks) { buf.set(chunk, offset); offset += chunk.length; }
+    return buf.buffer;
+}
+
+// Softmax numérico estable
+function softmax(logits) {
+    const max = Math.max(...logits);
+    const exps = logits.map(l => Math.exp(l - max));
+    const sum  = exps.reduce((a, b) => a + b, 0);
+    return exps.map(e => e / sum);
+}
+
+// ============================================================
+// INICIALIZACIÓN — carga ambos modelos en paralelo
 // ============================================================
 async function inicializar() {
     try {
-        // Configurar ONNX Runtime — usar WASM (funciona en todos los dispositivos)
+        // Configurar WASM paths para ONNX Runtime
         ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.0/dist/';
 
-        actualizarCarga('Descargando modelo de IA...', 5);
+        actualizarCarga('Preparando motores de IA...', 2);
 
-        // Descargar modelo con indicador de progreso
-        const response = await fetch(MODEL_PATH);
-        if (!response.ok) throw new Error('No se encontró el modelo ONNX');
+        // Descargar ambos modelos en paralelo (más rápido que secuencial)
+        const [bufV1, bufV2] = await Promise.all([
+            descargarModelo(PATH_V1, 2,  45, 'Modelo Principal'),
+            descargarModelo(PATH_V2, 45, 88, 'Modelo Especializado')
+        ]);
 
-        const contentLength = parseInt(response.headers.get('Content-Length') || '0');
-        const reader = response.body.getReader();
-        const chunks = [];
-        let bytesRecibidos = 0;
+        actualizarCarga('Cargando modelos en memoria...', 88);
 
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
-            bytesRecibidos += value.length;
-            if (contentLength > 0) {
-                const pct = Math.min(70, (bytesRecibidos / contentLength) * 70);
-                actualizarCarga(`Descargando modelo... ${(bytesRecibidos / 1024 / 1024).toFixed(1)} MB`, pct);
-            }
-        }
-
-        // Ensamblar buffer
-        const modelBuffer = new Uint8Array(bytesRecibidos);
-        let offset = 0;
-        for (const chunk of chunks) {
-            modelBuffer.set(chunk, offset);
-            offset += chunk.length;
-        }
-
-        actualizarCarga('Cargando modelo en memoria...', 75);
-
-        // Crear sesión ONNX
-        sesionONNX = await ort.InferenceSession.create(modelBuffer.buffer, {
+        // Crear sesiones ONNX — ambos con WASM para máxima compatibilidad
+        const opciones = {
             executionProviders: ['wasm'],
             graphOptimizationLevel: 'all'
-        });
+        };
+        [sesionV1, sesionV2] = await Promise.all([
+            ort.InferenceSession.create(bufV1, opciones),
+            ort.InferenceSession.create(bufV2, opciones)
+        ]);
 
-        actualizarCarga('Calentando motor...', 85);
+        actualizarCarga('Calentando motores...', 93);
 
-        // Warmup — primera inferencia siempre es lenta
-        const dummy = new ort.Tensor('float32', new Float32Array(1 * 3 * IMG_SIZE * IMG_SIZE), [1, 3, IMG_SIZE, IMG_SIZE]);
-        const warmupResult = await sesionONNX.run({ input: dummy });
-        // Verificar que la salida tiene 4 clases
-        const outputName = Object.keys(warmupResult)[0];
-        const outputData = warmupResult[outputName].data;
-        if (outputData.length !== 4) throw new Error(`Salida inesperada: ${outputData.length} clases`);
+        // Warmup — la primera inferencia siempre es lenta, la hacemos invisible al usuario
+        const dummy = new ort.Tensor('float32',
+            new Float32Array(3 * IMG_SIZE * IMG_SIZE), [1, 3, IMG_SIZE, IMG_SIZE]);
+        await Promise.all([
+            sesionV1.run({ input: dummy }),
+            sesionV2.run({ input: dummy })
+        ]);
 
-        actualizarCarga('Activando cámara...', 92);
+        actualizarCarga('Activando cámara...', 96);
         await iniciarCamara();
 
-        actualizarCarga('¡Listo!', 100);
-        setTimeout(() => $pantallaCarga.classList.add('oculto'), 400);
+        actualizarCarga('¡Sistema listo!', 100);
+        setTimeout(() => $carga.classList.add('oculto'), 400);
 
     } catch (err) {
         console.error('Error al inicializar:', err);
-        $estadoCarga.textContent = `Error: ${err.message}`;
-        $estadoCarga.style.color = '#ef5350';
+        $estado.textContent = '❌ ' + err.message;
+        $estado.style.color = '#ef5350';
     }
-}
-
-function actualizarCarga(texto, pct) {
-    $estadoCarga.textContent = texto;
-    $progresoFill.style.width = pct + '%';
 }
 
 // ============================================================
@@ -583,7 +618,6 @@ function actualizarCarga(texto, pct) {
 // ============================================================
 async function iniciarCamara() {
     if (streamCamara) streamCamara.getTracks().forEach(t => t.stop());
-
     try {
         streamCamara = await navigator.mediaDevices.getUserMedia({
             video: {
@@ -594,49 +628,43 @@ async function iniciarCamara() {
             audio: false
         });
         $video.srcObject = streamCamara;
+        await $video.play().catch(() => {});
         $previewGal.style.display = 'none';
     } catch (err) {
-        console.error('Error cámara:', err);
+        console.warn('Error cámara:', err);
     }
-    $video.srcObject = streamCamara;
-    $video.play().catch(() => {});  // ← agrega esta línea
-    $previewGal.style.display = 'none';
 }
 
 // ============================================================
-// PREPROCESAMIENTO — crítico para precisión
+// PREPROCESAMIENTO
+// Convierte el frame a tensor NCHW float32 con normalización ImageNet
 // ============================================================
-function capturarYPreprocesar() {
-    $canvas.width = IMG_SIZE;
+function preprocesar() {
+    $canvas.width  = IMG_SIZE;
     $canvas.height = IMG_SIZE;
 
-    // Dibujar frame en canvas 224x224
+    // Recorte cuadrado centrado (igual a CenterCrop de PyTorch)
     if ($previewGal.style.display === 'block') {
         $ctx.drawImage($previewGal, 0, 0, IMG_SIZE, IMG_SIZE);
     } else {
-        const vw = $video.videoWidth;
-        const vh = $video.videoHeight;
+        const vw = $video.videoWidth  || IMG_SIZE;
+        const vh = $video.videoHeight || IMG_SIZE;
         const min = Math.min(vw, vh);
-        const sx = (vw - min) / 2;
-        const sy = (vh - min) / 2;
+        const sx  = (vw - min) / 2;
+        const sy  = (vh - min) / 2;
         $ctx.drawImage($video, sx, sy, min, min, 0, 0, IMG_SIZE, IMG_SIZE);
     }
 
-    // Obtener pixels RGBA
-    const imageData = $ctx.getImageData(0, 0, IMG_SIZE, IMG_SIZE);
-    const rgba = imageData.data;
+    const rgba = $ctx.getImageData(0, 0, IMG_SIZE, IMG_SIZE).data;
+    const chw  = new Float32Array(3 * IMG_SIZE * IMG_SIZE);
 
-    // Convertir a CHW float32 con normalización ImageNet
-    // PyTorch usa formato NCHW: [batch, canales, alto, ancho]
-    const chw = new Float32Array(1 * 3 * IMG_SIZE * IMG_SIZE);
-
+    // NCHW: [canal][fila][col] con normalización ImageNet
     for (let y = 0; y < IMG_SIZE; y++) {
         for (let x = 0; x < IMG_SIZE; x++) {
-            const srcIdx = (y * IMG_SIZE + x) * 4;
+            const src = (y * IMG_SIZE + x) * 4;
             for (let c = 0; c < 3; c++) {
-                const pixel = rgba[srcIdx + c] / 255.0;
-                const normalized = (pixel - MEAN[c]) / STD[c];
-                chw[c * IMG_SIZE * IMG_SIZE + y * IMG_SIZE + x] = normalized;
+                chw[c * IMG_SIZE * IMG_SIZE + y * IMG_SIZE + x] =
+                    (rgba[src + c] / 255.0 - MEAN[c]) / STD[c];
             }
         }
     }
@@ -644,93 +672,103 @@ function capturarYPreprocesar() {
     return new ort.Tensor('float32', chw, [1, 3, IMG_SIZE, IMG_SIZE]);
 }
 
-function capturarBase64ParaGemini() {
-    const c = document.createElement('canvas');
-    c.width = 512; c.height = 512;
+// Captura JPEG para Gemini (512×512 es suficiente y más rápido)
+function capturarBase64() {
+    const c   = document.createElement('canvas');
+    c.width   = 512;
+    c.height  = 512;
     const ctx = c.getContext('2d');
-
     if ($previewGal.style.display === 'block') {
         ctx.drawImage($previewGal, 0, 0, 512, 512);
     } else {
-        const vw = $video.videoWidth;
-        const vh = $video.videoHeight;
+        const vw  = $video.videoWidth  || 512;
+        const vh  = $video.videoHeight || 512;
         const min = Math.min(vw, vh);
         ctx.drawImage($video, (vw - min) / 2, (vh - min) / 2, min, min, 0, 0, 512, 512);
     }
-
     return c.toDataURL('image/jpeg', 0.85).split(',')[1];
 }
 
 // ============================================================
-// INFERENCIA LOCAL — ONNX Runtime (modelo completo fine-tuneado)
+// INFERENCIA ENSEMBLE — corre V1 y V2 en paralelo y promedia
 // ============================================================
-async function clasificarLocal() {
-    const tensor = capturarYPreprocesar();
+async function clasificarEnsemble() {
+    const tensor = preprocesar();
 
-    // Ejecutar inferencia
-    const resultados = await sesionONNX.run({ input: tensor });
-    const outputName = Object.keys(resultados)[0];
-    const logits = Array.from(resultados[outputName].data);
+    // Ejecutar ambos modelos en paralelo
+    const [outV1, outV2] = await Promise.all([
+        sesionV1.run({ input: tensor }),
+        sesionV2.run({ input: tensor })
+    ]);
 
-    // Softmax
-    const maxLogit = Math.max(...logits);
-    const exps = logits.map(l => Math.exp(l - maxLogit));
-    const sumExps = exps.reduce((a, b) => a + b, 0);
-    const probs = exps.map(e => e / sumExps);
+    const logitsV1 = Array.from(Object.values(outV1)[0].data);
+    const logitsV2 = Array.from(Object.values(outV2)[0].data);
 
-    // Clase con mayor probabilidad
+    const probsV1  = softmax(logitsV1);
+    const probsV2  = softmax(logitsV2);
+
+    // Decisión de ponderación:
+    // Si V1 tiene alta confianza (>85%) → 70% V1 + 30% V2
+    // Si V1 tiene baja confianza (<85%) → 50% V1 + 50% V2
+    // V2 está especializado en las clases débiles, así que siempre aporta
+    const maxV1 = Math.max(...probsV1);
+    const w1 = maxV1 >= 0.85 ? 0.70 : 0.50;
+    const w2 = 1 - w1;
+
+    const ensemble = probsV1.map((p, i) => w1 * p + w2 * probsV2[i]);
+
+    // Clase con mayor probabilidad ensemble
     let maxIdx = 0;
-    for (let i = 1; i < probs.length; i++) {
-        if (probs[i] > probs[maxIdx]) maxIdx = i;
+    for (let i = 1; i < ensemble.length; i++) {
+        if (ensemble[i] > ensemble[maxIdx]) maxIdx = i;
     }
 
     return {
-        clase: CLASES_MODELO[maxIdx],
-        confianza: probs[maxIdx],
-        todas: Object.fromEntries(CLASES_MODELO.map((c, i) => [c, probs[i]]))
+        clase:     CLASES[maxIdx],
+        confianza: ensemble[maxIdx],
+        todas:     Object.fromEntries(CLASES.map((c, i) => [c, ensemble[i]])),
+        v1_clase:  CLASES[probsV1.indexOf(Math.max(...probsV1))],
+        v2_clase:  CLASES[probsV2.indexOf(Math.max(...probsV2))],
+        v1_conf:   maxV1
     };
 }
 
 // ============================================================
-// GEMINI — vía serverless /api/gemini
+// GEMINI — proxy serverless /api/gemini
 // ============================================================
-async function clasificarGemini(base64Img) {
-    if (!base64Img || base64Img.length < 1000) return null;
+async function clasificarGemini(base64) {
+    if (!base64 || base64.length < 100) return null;
     try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000);
-
-        const res = await fetch('/api/gemini', {
-            method: 'POST',
+        const ctrl    = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), 30000);
+        const res     = await fetch('/api/gemini', {
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tipo: 'vision', base64Img }),
-            signal: controller.signal
+            body:    JSON.stringify({ tipo: 'vision', base64Img: base64 }),
+            signal:  ctrl.signal
         });
         clearTimeout(timeout);
-
         if (!res.ok) return null;
-        const data = await res.json();
-        const clase = data.texto?.trim() || null;
-        return CLASES_MODELO.includes(clase) ? clase : null;
+        const data  = await res.json();
+        const clase = (data.texto || '').trim();
+        return CLASES.includes(clase) ? clase : null;
     } catch (err) {
         console.warn('Gemini no disponible:', err.message);
         return null;
     }
 }
 
-async function obtenerDatoCurioso(clase) {
+async function obtenerDato(clase) {
     try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 15000);
-
-        const res = await fetch('/api/gemini', {
-            method: 'POST',
+        const ctrl    = new AbortController();
+        const timeout = setTimeout(() => ctrl.abort(), 15000);
+        const res     = await fetch('/api/gemini', {
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tipo: 'dato', clase }),
-            signal: controller.signal
+            body:    JSON.stringify({ tipo: 'dato', clase }),
+            signal:  ctrl.signal
         });
         clearTimeout(timeout);
-
         const data = await res.json();
         return data.texto || '';
     } catch {
@@ -742,58 +780,60 @@ async function obtenerDatoCurioso(clase) {
 // FLUJO PRINCIPAL
 // ============================================================
 async function clasificar() {
-    if (analizando || !sesionONNX) return;
+    // Guardia doble: analizando + disabled para evitar doble tap
+    if (analizando || !sesionV1 || !sesionV2) return;
     analizando = true;
-
-    // UI inmediata — el usuario ve feedback al instante
-    $btnClasif.classList.add('analizando');
+    $btnClasif.disabled = true;
     $btnClasif.textContent = 'ANALIZANDO...';
     $scanOverlay.classList.add('activo');
     $resOverlay.classList.remove('visible');
     limpiarContenedores();
 
-    // Esperar un frame para que el browser pinte los cambios de UI
+    // Esperar dos frames para que el browser pinte los cambios antes de bloquear el hilo
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
     try {
-        // Capturar base64 para Gemini ANTES de la inferencia local
-        const base64 = capturarBase64ParaGemini();
+        // Capturar base64 para Gemini mientras el hilo está libre
+        const base64 = capturarBase64();
 
-        // Ejecutar ambos motores en paralelo
-        const [resultadoLocal, claseGemini] = await Promise.all([
-            clasificarLocal(),
+        // Ensemble + Gemini en paralelo
+        const [resEnsemble, claseGemini] = await Promise.all([
+            clasificarEnsemble(),
             clasificarGemini(base64)
         ]);
 
-        // Determinar resultado final
-        let claseFinal = resultadoLocal.clase;
-        let confianzaFinal = resultadoLocal.confianza;
-        let concordancia = false;
+        // Lógica de resultado final
+        // Gemini actúa como árbitro cuando el ensemble tiene baja confianza
+        let claseFinal    = resEnsemble.clase;
+        let confianzaFinal = resEnsemble.confianza;
+        let modoResultado  = 'ensemble'; // 'ensemble' | 'gemini-corrige' | 'alta-confianza'
 
         if (claseGemini) {
-            concordancia = (resultadoLocal.clase === claseGemini);
-            if (!concordancia) {
-                claseFinal = claseGemini;
-                confianzaFinal = resultadoLocal.todas[claseGemini] || 0;
+            if (claseGemini === resEnsemble.clase) {
+                modoResultado = 'alta-confianza'; // Ensemble + Gemini coinciden
+            } else if (resEnsemble.confianza < 0.80) {
+                // Confianza baja → Gemini decide
+                claseFinal     = claseGemini;
+                confianzaFinal = resEnsemble.todas[claseGemini] || resEnsemble.confianza;
+                modoResultado  = 'gemini-corrige';
             }
+            // Si confianza >= 0.80 y Gemini difiere, mantenemos ensemble
         }
 
-        // Mostrar resultado
         $scanOverlay.classList.remove('activo');
-        mostrarResultado(claseFinal, confianzaFinal, concordancia, claseGemini, resultadoLocal.clase);
+        mostrarResultado(claseFinal, confianzaFinal, modoResultado, resEnsemble);
 
-        // Dato curioso — no bloquea
-        obtenerDatoCurioso(claseFinal).then(dato => {
+        // Dato curioso — no bloquea la UI
+        obtenerDato(claseFinal).then(dato => {
             if (dato) $resDato.textContent = dato;
         });
 
     } catch (err) {
-        console.error('Error clasificando:', err);
+        console.error('Error al clasificar:', err);
         $scanOverlay.classList.remove('activo');
     }
 
-    // Restaurar botón
-    $btnClasif.classList.remove('analizando');
+    $btnClasif.disabled = false;
     $btnClasif.textContent = 'CLASIFICAR';
     analizando = false;
 }
@@ -801,35 +841,42 @@ async function clasificar() {
 // ============================================================
 // MOSTRAR RESULTADO
 // ============================================================
-function mostrarResultado(clase, confianza, concordancia, claseGemini, claseLocal) {
-    const nombre = NOMBRES_CLASE[clase] || clase.toUpperCase();
-    const color = COLORES_CLASE[clase] || '#fff';
-    const pct = (confianza * 100).toFixed(1);
+function mostrarResultado(clase, confianza, modo, resEnsemble) {
+    $resClase.textContent = NOMBRES[clase] || clase.toUpperCase();
+    $resClase.style.color = COLORES[clase] || '#fff';
+    $resConf.textContent  = (confianza * 100).toFixed(1) + '%';
+    $resDato.textContent  = '';
 
-    $resClase.textContent = nombre;
-    $resClase.style.color = color;
-    $resConf.textContent = pct + '%';
+    // V1 y V2 coinciden entre sí → mostrar detalle del ensemble
+    const v1v2Coinciden = resEnsemble.v1_clase === resEnsemble.v2_clase;
 
-    if (claseGemini && concordancia) {
-        $resBadge.textContent = '✓ ALTA CONFIANZA';
-        $resBadge.className = 'badge badge-alta';
-    } else if (claseGemini && !concordancia) {
-        $resBadge.textContent = 'GEMINI CORRIGE → ' + (NOMBRES_CLASE[claseGemini] || '');
-        $resBadge.className = 'badge badge-gemini';
-    } else {
-        $resBadge.textContent = 'MODELO LOCAL';
-        $resBadge.className = 'badge badge-gemini';
+    switch (modo) {
+        case 'alta-confianza':
+            $resBadge.textContent = '✓ ALTA CONFIANZA · ENSEMBLE + IA';
+            $resBadge.className   = 'badge badge-alta';
+            break;
+        case 'gemini-corrige':
+            $resBadge.textContent = '⚡ GEMINI CORRIGE ENSEMBLE';
+            $resBadge.className   = 'badge badge-gemini';
+            break;
+        default: // 'ensemble'
+            if (v1v2Coinciden) {
+                $resBadge.textContent = '◈ ENSEMBLE V1+V2 COINCIDEN';
+                $resBadge.className   = 'badge badge-ensemble';
+            } else {
+                $resBadge.textContent = '◈ ENSEMBLE V1+V2';
+                $resBadge.className   = 'badge badge-ensemble';
+            }
     }
 
-    $resDato.textContent = '';
     $resOverlay.classList.add('visible');
     activarContenedor(clase);
 }
 
 function activarContenedor(clase) {
     limpiarContenedores();
-    const item = document.querySelector(`.contenedor-item[data-clase="${clase}"]`);
-    if (item) item.classList.add('activo');
+    const el = document.querySelector(`.contenedor-item[data-clase="${clase}"]`);
+    if (el) el.classList.add('activo');
 }
 
 function limpiarContenedores() {
@@ -839,6 +886,8 @@ function limpiarContenedores() {
 // ============================================================
 // EVENTOS
 // ============================================================
+
+// Botón principal — touch-action: manipulation en CSS evita el delay de 300ms en móvil
 $btnClasif.addEventListener('click', clasificar);
 
 $btnCamara.addEventListener('click', () => {
@@ -852,7 +901,7 @@ $inputGal.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = ev => {
         $previewGal.src = ev.target.result;
         $previewGal.style.display = 'block';
         $previewGal.onload = () => clasificar();
@@ -861,6 +910,7 @@ $inputGal.addEventListener('change', (e) => {
     e.target.value = '';
 });
 
+// Tap en la zona de cámara cierra el preview de galería
 $video.addEventListener('click', () => {
     if ($previewGal.style.display === 'block') {
         $previewGal.style.display = 'none';
