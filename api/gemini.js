@@ -4,25 +4,22 @@
 // ============================================================
 
 export default async function handler(req, res) {
-    // Solo POST
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    // Verificar key
     const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
     if (!GEMINI_API_KEY) {
         return res.status(500).json({ error: 'GEMINI_API_KEY no configurada en Vercel' });
     }
 
     const { tipo, base64Img, clase } = req.body;
-    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
     try {
         let payload;
 
         if (tipo === 'vision') {
-            // Validar que la imagen no esté vacía
             if (!base64Img || base64Img.length < 500) {
                 return res.status(400).json({ error: 'Imagen inválida', texto: null });
             }
@@ -42,9 +39,6 @@ export default async function handler(req, res) {
                     ]
                 }],
                 generationConfig: {
-                    thinkingConfig: {
-                        thinkingBudget: 0
-                    },
                     maxOutputTokens: 10,
                     temperature: 0
                 }
@@ -65,9 +59,6 @@ export default async function handler(req, res) {
                     }]
                 }],
                 generationConfig: {
-                    thinkingConfig: {
-                        thinkingBudget: 0
-                    },
                     maxOutputTokens: 150,
                     temperature: 0.7
                 }
@@ -77,7 +68,6 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: 'Tipo inválido. Usa "vision" o "dato".' });
         }
 
-        // Llamar a Gemini
         const geminiRes = await fetch(GEMINI_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -86,7 +76,6 @@ export default async function handler(req, res) {
 
         const data = await geminiRes.json();
 
-        // Verificar errores de Gemini
         if (!geminiRes.ok || data.error) {
             console.error('Gemini error:', JSON.stringify(data.error || {}));
             return res.status(200).json({
@@ -95,23 +84,9 @@ export default async function handler(req, res) {
             });
         }
 
-        // Extraer texto de respuesta
-        // Gemini 2.5 Flash puede devolver bloques de "thought" antes del texto real
         const parts = data.candidates?.[0]?.content?.parts || [];
-        let texto = '';
-        for (const part of parts) {
-            if (part.text && !part.thought) {
-                texto = part.text.trim();
-                break;
-            }
-        }
+        const texto = parts.find(p => p.text)?.text?.trim() || '';
 
-        // Si no encontramos texto sin thought, tomar cualquier texto
-        if (!texto) {
-            texto = parts.find(p => p.text)?.text?.trim() || '';
-        }
-
-        // Procesar según tipo
         if (tipo === 'vision') {
             const mapa = {
                 '1': 'organico',
@@ -119,16 +94,12 @@ export default async function handler(req, res) {
                 '3': 'no_aprovechable',
                 '4': 'peligroso'
             };
-            // Extraer primer dígito de la respuesta
-            const digitos = texto.replace(/\D/g, '');
-            const num = digitos.charAt(0);
+            const num = texto.replace(/\D/g, '').charAt(0);
             const claseDetectada = mapa[num] || null;
-
             console.log(`Gemini vision: raw="${texto}" → clase=${claseDetectada}`);
             return res.status(200).json({ texto: claseDetectada });
         }
 
-        // tipo === 'dato'
         return res.status(200).json({ texto });
 
     } catch (err) {
