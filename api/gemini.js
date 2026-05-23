@@ -17,7 +17,10 @@ export default async function handler(req, res) {
                         { inline_data: { mime_type: 'image/jpeg', data: base64Img } },
                         { text: 'Clasifica este residuo. Responde SOLO con uno de estos números: 1=organico, 2=inorganico_reciclable, 3=no_aprovechable, 4=peligroso. Solo el número.' }
                     ]
-                }]
+                }],
+                generationConfig: {
+                    thinkingConfig: { thinkingBudget: 0 }
+                }
             };
         } else {
             const nombres = { organico: 'ORGÁNICO', inorganico_reciclable: 'INORGÁNICO RECICLABLE', no_aprovechable: 'NO APROVECHABLE', peligroso: 'RESIDUO PELIGROSO' };
