@@ -47,13 +47,23 @@ Solo el número, nada más.` }
         });
 
         const data = await geminiRes.json();
+
+        // DEBUG: si Gemini devuelve error
+        if (!geminiRes.ok || data.error) {
+            return res.status(200).json({ 
+                texto: null, 
+                debug: data.error?.message || `HTTP ${geminiRes.status}` 
+            });
+        }
+
         const texto = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
 
         if (tipo === 'vision') {
             const mapa = { '1': 'organico', '2': 'inorganico_reciclable', '3': 'no_aprovechable', '4': 'peligroso' };
             const num = texto.replace(/\D/g, '').charAt(0);
-            const clase = mapa[num] || null;
-            return res.status(200).json({ texto: clase });
+            const claseDetectada = mapa[num] || null;
+            // DEBUG: incluir raw para ver qué respondió Gemini
+            return res.status(200).json({ texto: claseDetectada, debug: texto });
         }
 
         res.status(200).json({ texto });
