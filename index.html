@@ -397,7 +397,7 @@
     </header>
 
     <section id="zona-camara">
-        <video id="video-camara" autoplay playsinline muted></video>
+        <video id="video-camara" autoplay playsinline muted webkit-playsinline></video>
         <canvas id="canvas-captura"></canvas>
         <img id="preview-galeria" alt="Preview">
 
@@ -598,6 +598,9 @@ async function iniciarCamara() {
     } catch (err) {
         console.error('Error cámara:', err);
     }
+    $video.srcObject = streamCamara;
+    $video.play().catch(() => {});  // ← agrega esta línea
+    $previewGal.style.display = 'none';
 }
 
 // ============================================================
