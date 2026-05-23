@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ITGAM WasteAI — Clasificador de Residuos</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#06060e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@4.22.0/dist/tf-backend-wasm.min.js"></script>
+    <style>
+        /* ============================== */
+        /* VARIABLES Y RESET              */
+        /* ============================== */
+        :root {
+            --bg-primary: #06060e;
+            --bg-secondary: #0c0c1a;
+            --bg-card: #111128;
+            --cyan: #00e5ff;
+            --cyan-dim: #00e5ff44;
+            --cyan-glow: 0 0 20px #00e5ff66, 0 0 40px #00e5ff22;
+            --text-primary: #e8eaf6;
+            --text-secondary: #9fa8da;
+            --text-dim: #5c6bc0;
+
+            /* Colores contenedores — NADF-024 (cambiables) */
+            --color-organico: #2E7D32;
+            --color-reciclable: #616161;
+            --color-no-aprovechable: #212121;
+            --color-peligroso: #C62828;
+
+            --font-display: 'Orbitron', monospace;
+            --font-body: 'Exo 2', sans-serif;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        /* ============================== */
+        /* PANTALLA DE CARGA              */
+        /* ============================== */
+        #pantalla-carga {
+            position: fixed; inset: 0; z-index: 1000;
+            background: var(--bg-primary);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 24px;
+            transition: opacity 0.6s, visibility 0.6s;
+        }
+        #pantalla-carga.oculto { opacity: 0; visibility: hidden; pointer-events: none; }
+
+        #pantalla-carga h1 {
+            font-family: var(--font-display);
+            font-size: 28px;
+            background: linear-gradient(135deg, var(--cyan), #7c4dff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: 3px;
+        }
+
+        .barra-progreso {
+            width: 260px; height: 3px;
+            background: var(--bg-card);
+            border-radius: 2px; overflow: hidden;
+        }
+        .barra-progreso-fill {
+            height: 100%; width: 0%;
+            background: linear-gradient(90deg, var(--cyan), #7c4dff);
+            border-radius: 2px;
+            transition: width 0.3s;
+        }
+
+        #estado-carga {
+            font-size: 13px;
+            color: var(--text-secondary);
+            letter-spacing: 1px;
+        }
+
+        /* ============================== */
+        /* LAYOUT PRINCIPAL               */
+        /* ============================== */
+        #app {
+            width: 100%; height: 100%;
+            display: grid;
+            grid-template-rows: 48px 1fr auto auto;
+            background: var(--bg-primary);
+        }
+
+        /* --- Header --- */
+        #header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--cyan-dim);
+        }
+
+        #header .logo {
+            font-family: var(--font-display);
+            font-size: 14px;
+            letter-spacing: 2px;
+            color: var(--cyan);
+        }
+
+        #header .logo span {
+            color: var(--text-secondary);
+            font-weight: 400;
+            font-family: var(--font-body);
+            font-size: 11px;
+            margin-left: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        #header .controles {
+            display: flex; gap: 8px;
+        }
+
+        .btn-icono {
+            width: 36px; height: 36px;
+            border: 1px solid var(--cyan-dim);
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 18px;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s;
+        }
+        .btn-icono:active { background: var(--cyan-dim); color: var(--cyan); }
+
+        /* --- Zona de cámara --- */
+        #zona-camara {
+            position: relative;
+            overflow: hidden;
+            background: #000;
+        }
+
+        #video-camara {
+            width: 100%; height: 100%;
+            object-fit: cover;
+        }
+
+        #canvas-captura { display: none; }
+
+        /* Overlay de scan */
+        #scan-overlay {
+            position: absolute; inset: 0;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        #scan-overlay.activo { opacity: 1; }
+
+        #scan-overlay .linea-scan {
+            position: absolute;
+            left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+            box-shadow: 0 0 15px var(--cyan), 0 0 30px var(--cyan);
+            animation: scan 1.2s ease-in-out infinite;
+        }
+
+        @keyframes scan {
+            0% { top: 0; }
+            100% { top: 100%; }
+        }
+
+        #scan-overlay .esquinas {
+            position: absolute; inset: 15%;
+            border: 2px solid transparent;
+        }
+        #scan-overlay .esquinas::before,
+        #scan-overlay .esquinas::after {
+            content: '';
+            position: absolute;
+            width: 30px; height: 30px;
+            border-color: var(--cyan);
+            border-style: solid;
+        }
+        #scan-overlay .esquinas::before {
+            top: 0; left: 0;
+            border-width: 2px 0 0 2px;
+        }
+        #scan-overlay .esquinas::after {
+            bottom: 0; right: 0;
+            border-width: 0 2px 2px 0;
+        }
+        #scan-overlay .esquina-tr,
+        #scan-overlay .esquina-bl {
+            position: absolute;
+            width: 30px; height: 30px;
+            border-color: var(--cyan);
+            border-style: solid;
+        }
+        #scan-overlay .esquina-tr {
+            top: 15%; right: 15%;
+            border-width: 2px 2px 0 0;
+        }
+        #scan-overlay .esquina-bl {
+            bottom: 15%; left: 15%;
+            border-width: 0 0 2px 2px;
+        }
+
+        /* Resultado flotante sobre cámara */
+        #resultado-overlay {
+            position: absolute;
+            top: 12px; left: 12px; right: 12px;
+            background: #06060ecc;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--cyan-dim);
+            border-radius: 12px;
+            padding: 12px 16px;
+            opacity: 0;
+            transform: translateY(-20px);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 10;
+        }
+        #resultado-overlay.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .resultado-clase {
+            font-family: var(--font-display);
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .resultado-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 4px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .resultado-meta .confianza {
+            font-weight: 600;
+        }
+
+        .resultado-meta .badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .badge-alta { background: #1b5e2044; color: #66bb6a; border: 1px solid #66bb6a44; }
+        .badge-gemini { background: #4a148c33; color: #ce93d8; border: 1px solid #ce93d844; }
+
+        .resultado-dato {
+            margin-top: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            font-style: italic;
+        }
+
+        /* --- Botón clasificar --- */
+        #zona-boton {
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            background: var(--bg-secondary);
+        }
+
+        #btn-clasificar {
+            flex: 1;
+            max-width: 420px;
+            height: 44px;
+            border: none;
+            border-radius: 10px;
+            font-family: var(--font-display);
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(135deg, #0d47a1, #1a237e);
+            color: var(--cyan);
+            border: 1px solid var(--cyan-dim);
+            transition: all 0.3s;
+        }
+        #btn-clasificar:active {
+            transform: scale(0.97);
+        }
+        #btn-clasificar.analizando {
+            background: linear-gradient(135deg, #004d40, #00695c);
+            pointer-events: none;
+        }
+        #btn-clasificar::after {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--cyan), #7c4dff);
+            z-index: -1;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        #btn-clasificar:hover::after { opacity: 0.3; }
+
+        /* Input file oculto */
+        #input-galeria { display: none; }
+
+        /* --- Contenedores --- */
+        #zona-contenedores {
+            padding: 6px 12px 12px;
+            background: var(--bg-primary);
+            border-top: 1px solid #ffffff0a;
+        }
+
+        .contenedores-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .contenedor-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 4px;
+            border-radius: 10px;
+            border: 2px solid transparent;
+            position: relative;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .contenedor-item.activo {
+            border-color: var(--color-activo);
+            background: var(--glow-bg);
+            box-shadow: var(--glow-shadow);
+        }
+
+        .contenedor-icono {
+            width: 36px; height: 40px;
+            border-radius: 6px;
+            border: 2px solid;
+            position: relative;
+            transition: all 0.4s;
+        }
+
+        /* Forma de contenedor con tapa */
+        .contenedor-icono::before {
+            content: '';
+            position: absolute;
+            top: -4px; left: 4px; right: 4px;
+            height: 4px;
+            border-radius: 2px 2px 0 0;
+            background: inherit;
+            border: 2px solid;
+            border-color: inherit;
+            border-bottom: none;
+        }
+
+        .contenedor-label {
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-align: center;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            transition: color 0.3s;
+            line-height: 1.2;
+        }
+        .contenedor-item.activo .contenedor-label {
+            color: var(--text-primary);
+        }
+
+        /* Flecha indicadora */
+        .contenedor-flecha {
+            position: absolute;
+            top: -22px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 20px;
+            color: var(--cyan);
+            opacity: 0;
+            transition: opacity 0.3s;
+            filter: drop-shadow(0 0 6px var(--cyan));
+            animation: flecha-bounce 0.8s ease-in-out infinite;
+        }
+        .contenedor-item.activo .contenedor-flecha {
+            opacity: 1;
+        }
+
+        @keyframes flecha-bounce {
+            0%, 100% { transform: translateX(-50%) translateY(0); }
+            50% { transform: translateX(-50%) translateY(4px); }
+        }
+
+        /* Colores individuales */
+        .cont-organico .contenedor-icono {
+            border-color: var(--color-organico);
+            background: #2E7D3222;
+        }
+        .cont-reciclable .contenedor-icono {
+            border-color: var(--color-reciclable);
+            background: #61616122;
+        }
+        .cont-no-aprv .contenedor-icono {
+            border-color: var(--color-no-aprovechable);
+            background: #42424222;
+        }
+        .cont-peligroso .contenedor-icono {
+            border-color: var(--color-peligroso);
+            background: #C6282822;
+        }
+
+        /* Estilos activos por clase */
+        .cont-organico.activo {
+            --color-activo: var(--color-organico);
+            --glow-bg: #2E7D3218;
+            --glow-shadow: 0 0 20px #2E7D3244, 0 4px 20px #2E7D3233;
+        }
+        .cont-reciclable.activo {
+            --color-activo: var(--color-reciclable);
+            --glow-bg: #61616118;
+            --glow-shadow: 0 0 20px #61616144, 0 4px 20px #61616133;
+        }
+        .cont-no-aprv.activo {
+            --color-activo: #757575;
+            --glow-bg: #42424218;
+            --glow-shadow: 0 0 20px #42424244, 0 4px 20px #42424233;
+        }
+        .cont-peligroso.activo {
+            --color-activo: var(--color-peligroso);
+            --glow-bg: #C6282818;
+            --glow-shadow: 0 0 20px #C6282844, 0 4px 20px #C6282833;
+        }
+
+        /* ============================== */
+        /* FONDO DECORATIVO               */
+        /* ============================== */
+        #app::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background:
+                radial-gradient(ellipse at 20% 50%, #0d47a108 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 20%, #4a148c06 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ============================== */
+        /* UTILIDADES                      */
+        /* ============================== */
+        .oculto { display: none !important; }
+
+        /* Barra fina de status */
+        #status-bar {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            height: 2px;
+            background: transparent;
+            z-index: 20;
+        }
+        #status-bar.cargando {
+            background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+            animation: status-move 1.5s ease-in-out infinite;
+        }
+        @keyframes status-move {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        /* Modo galería preview */
+        #preview-galeria {
+            position: absolute;
+            inset: 0;
+            object-fit: contain;
+            background: #000;
+            z-index: 5;
+            display: none;
+        }
+
+        /* ============================== */
+        /* RESPONSIVE — modo retrato      */
+        /* ============================== */
+        @media (orientation: portrait) {
+            #app { grid-template-rows: 48px 1fr auto auto; }
+            .contenedores-grid { gap: 6px; }
+            .contenedor-icono { width: 30px; height: 34px; }
+            .contenedor-label { font-size: 8px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ======================== -->
+<!-- PANTALLA DE CARGA        -->
+<!-- ======================== -->
+<div id="pantalla-carga">
+    <h1>WASTEAI</h1>
+    <p style="color: var(--text-dim); font-size: 11px; letter-spacing: 4px; text-transform: uppercase;">
+        Instituto Tecnológico de Gustavo A. Madero
+    </p>
+    <div class="barra-progreso">
+        <div class="barra-progreso-fill" id="progreso-fill"></div>
+    </div>
+    <p id="estado-carga">Inicializando motor de IA...</p>
+</div>
+
+<!-- ======================== -->
+<!-- APP PRINCIPAL            -->
+<!-- ======================== -->
+<div id="app">
+
+    <!-- Header -->
+    <header id="header">
+        <div class="logo">
+            WASTEAI
+            <span>ITGAM · TecNM</span>
+        </div>
+        <div class="controles">
+            <button class="btn-icono" id="btn-galeria" title="Subir foto">🖼️</button>
+            <button class="btn-icono" id="btn-cambiar-camara" title="Cambiar cámara">🔄</button>
+        </div>
+    </header>
+
+    <!-- Zona de cámara -->
+    <section id="zona-camara">
+        <video id="video-camara" autoplay playsinline muted></video>
+        <canvas id="canvas-captura"></canvas>
+        <img id="preview-galeria" alt="Preview">
+
+        <!-- Overlay de escaneo -->
+        <div id="scan-overlay">
+            <div class="linea-scan"></div>
+            <div class="esquinas"></div>
+            <div class="esquina-tr"></div>
+            <div class="esquina-bl"></div>
+        </div>
+
+        <!-- Resultado flotante -->
+        <div id="resultado-overlay">
+            <div class="resultado-clase" id="res-clase"></div>
+            <div class="resultado-meta">
+                <span class="confianza" id="res-confianza"></span>
+                <span class="badge" id="res-badge"></span>
+            </div>
+            <div class="resultado-dato" id="res-dato">Analizando...</div>
+        </div>
+
+        <div id="status-bar"></div>
+    </section>
+
+    <!-- Botón clasificar -->
+    <section id="zona-boton">
+        <button id="btn-clasificar">CLASIFICAR</button>
+        <input type="file" id="input-galeria" accept="image/*">
+    </section>
+
+    <!-- Contenedores -->
+    <section id="zona-contenedores">
+        <div class="contenedores-grid">
+            <div class="contenedor-item cont-organico" data-clase="organico">
+                <div class="contenedor-flecha">▼</div>
+                <div class="contenedor-icono"></div>
+                <div class="contenedor-label">Orgánico</div>
+            </div>
+            <div class="contenedor-item cont-reciclable" data-clase="inorganico_reciclable">
+                <div class="contenedor-flecha">▼</div>
+                <div class="contenedor-icono"></div>
+                <div class="contenedor-label">Inorgánico Reciclable</div>
+            </div>
+            <div class="contenedor-item cont-no-aprv" data-clase="no_aprovechable">
+                <div class="contenedor-flecha">▼</div>
+                <div class="contenedor-icono"></div>
+                <div class="contenedor-label">No Aprovechable</div>
+            </div>
+            <div class="contenedor-item cont-peligroso" data-clase="peligroso">
+                <div class="contenedor-flecha">▼</div>
+                <div class="contenedor-icono"></div>
+                <div class="contenedor-label">Peligroso</div>
+            </div>
+        </div>
+    </section>
+
+</div>
+
+<!-- ======================== -->
+<!-- JAVASCRIPT               -->
+<!-- ======================== -->
+<script>
+// ============================================================
+// CONFIGURACIÓN
+// ============================================================
+
+// ⚠️ REEMPLAZA ESTO CON TU API KEY DE GEMINI (aistudio.google.com)
+const GEMINI_API_KEY = 'AIzaSyDtexZE_tKMgWqbJ98_PgmLMlmIaO09TXo';
+
+// Clases del modelo (orden de ImageFolder — alfabético)
+const CLASES_MODELO = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
+
+// Nombres legibles para mostrar en UI
+const NOMBRES_CLASE = {
+    organico: 'ORGÁNICO',
+    inorganico_reciclable: 'INORGÁNICO RECICLABLE',
+    no_aprovechable: 'NO APROVECHABLE',
+    peligroso: 'RESIDUO PELIGROSO'
+};
+
+// Colores de contenedores — cambia aquí si tu campus usa otros
+const COLORES_CLASE = {
+    organico: '#2E7D32',
+    inorganico_reciclable: '#616161',
+    no_aprovechable: '#424242',
+    peligroso: '#C62828'
+};
+
+const IMG_SIZE = 224;
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+// ============================================================
+// ESTADO GLOBAL
+// ============================================================
+let modelo = null;
+let streamCamara = null;
+let usandoCamaraFrontal = false;
+let analizando = false;
+
+// ============================================================
+// ELEMENTOS DOM
+// ============================================================
+const $video       = document.getElementById('video-camara');
+const $canvas      = document.getElementById('canvas-captura');
+const $ctx         = $canvas.getContext('2d');
+const $btnClasif   = document.getElementById('btn-clasificar');
+const $btnCamara   = document.getElementById('btn-cambiar-camara');
+const $btnGaleria  = document.getElementById('btn-galeria');
+const $inputGal    = document.getElementById('input-galeria');
+const $scanOverlay = document.getElementById('scan-overlay');
+const $resOverlay  = document.getElementById('resultado-overlay');
+const $resClase    = document.getElementById('res-clase');
+const $resConf     = document.getElementById('res-confianza');
+const $resBadge    = document.getElementById('res-badge');
+const $resDato     = document.getElementById('res-dato');
+const $statusBar   = document.getElementById('status-bar');
+const $previewGal  = document.getElementById('preview-galeria');
+const $progresoFill = document.getElementById('progreso-fill');
+const $estadoCarga = document.getElementById('estado-carga');
+const $pantallaCarga = document.getElementById('pantalla-carga');
+
+// ============================================================
+// INICIALIZACIÓN
+// ============================================================
+async function inicializar() {
+    try {
+        tf.env().set('WEBGL_VERSION', 1)
+        await tf.ready();
+        await tf.setBackend('cpu');
+        await tf.ready();
+        await tf.env().set('WEBGL_CPU_FORWARD', false);
+        // Paso 1: Cargar modelo TFJS
+        actualizarCarga('Descargando modelo de IA...', 10);
+        modelo = await tf.loadGraphModel('model/model.json', {
+            onProgress: (frac) => actualizarCarga('Descargando modelo de IA...', 10 + frac * 60)
+        });
+        actualizarCarga('Modelo cargado ✓', 75);
+
+        // Paso 2: Warmup — primera inferencia es lenta
+        // Warmup
+        const dummy = tf.zeros([1, IMG_SIZE, IMG_SIZE, 3]);
+        tf.tidy(() => modelo.execute(tensor));
+        dummy.dispose();
+        actualizarCarga('Motor listo ✓', 90);
+
+        // Paso 3: Iniciar cámara
+        actualizarCarga('Activando cámara...', 95);
+        await iniciarCamara();
+        actualizarCarga('¡Listo!', 100);
+
+        // Ocultar pantalla de carga
+        setTimeout(() => $pantallaCarga.classList.add('oculto'), 400);
+
+    } catch (err) {
+        console.error('Error al inicializar:', err);
+        $estadoCarga.textContent = `Error: ${err.message}`;
+        $estadoCarga.style.color = '#ef5350';
+    }
+}
+
+function actualizarCarga(texto, porcentaje) {
+    $estadoCarga.textContent = texto;
+    $progresoFill.style.width = porcentaje + '%';
+}
+
+// ============================================================
+// CÁMARA
+// ============================================================
+async function iniciarCamara() {
+    // Detener stream anterior
+    if (streamCamara) {
+        streamCamara.getTracks().forEach(t => t.stop());
+    }
+
+    const constraints = {
+        video: {
+            facingMode: usandoCamaraFrontal ? 'user' : 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+        },
+        audio: false
+    };
+
+    try {
+        streamCamara = await navigator.mediaDevices.getUserMedia(constraints);
+        $video.srcObject = streamCamara;
+        $previewGal.style.display = 'none';
+    } catch (err) {
+        console.error('Error al acceder a la cámara:', err);
+        alert('No se pudo acceder a la cámara. Verifica los permisos.');
+    }
+}
+
+// ============================================================
+// CAPTURA DE IMAGEN
+// ============================================================
+function capturarFrame() {
+    $canvas.width = IMG_SIZE;
+    $canvas.height = IMG_SIZE;
+
+    // Si hay preview de galería, usar esa imagen
+    if ($previewGal.style.display === 'block') {
+        $ctx.drawImage($previewGal, 0, 0, IMG_SIZE, IMG_SIZE);
+    } else {
+        // Capturar del video manteniendo aspecto
+        const vw = $video.videoWidth;
+        const vh = $video.videoHeight;
+        const min = Math.min(vw, vh);
+        const sx = (vw - min) / 2;
+        const sy = (vh - min) / 2;
+        $ctx.drawImage($video, sx, sy, min, min, 0, 0, IMG_SIZE, IMG_SIZE);
+    }
+
+    return $canvas;
+}
+
+function canvasABase64() {
+    // Canvas de mayor resolución para Gemini
+    const c2 = document.createElement('canvas');
+    c2.width = 512; c2.height = 512;
+    const ctx2 = c2.getContext('2d');
+
+    if ($previewGal.style.display === 'block') {
+        ctx2.drawImage($previewGal, 0, 0, 512, 512);
+    } else {
+        const vw = $video.videoWidth;
+        const vh = $video.videoHeight;
+        const min = Math.min(vw, vh);
+        const sx = (vw - min) / 2;
+        const sy = (vh - min) / 2;
+        ctx2.drawImage($video, sx, sy, min, min, 0, 0, 512, 512);
+    }
+
+    return c2.toDataURL('image/jpeg', 0.8).split(',')[1];
+}
+
+// ============================================================
+// INFERENCIA — EfficientNet-B0 (local)
+// ============================================================
+async function clasificarLocal() {
+    const canvas = capturarFrame();
+
+    const tensor = tf.browser.fromPixels(canvas)
+        .toFloat()
+        .expandDims(0);
+
+    const resultado = tf.tidy(() => {
+        const salida = modelo.execute(tensor);
+        const probs = tf.softmax(salida);
+        const datos = probs.dataSync();
+
+        let maxIdx = 0;
+        for (let i = 1; i < datos.length; i++) {
+            if (datos[i] > datos[maxIdx]) maxIdx = i;
+        }
+
+        return {
+            clase: CLASES_MODELO[maxIdx],
+            confianza: datos[maxIdx],
+            todas: Object.fromEntries(CLASES_MODELO.map((c, i) => [c, datos[i]]))
+        };
+    });
+
+    tensor.dispose();
+    return resultado;
+}
+
+// ============================================================
+// GEMINI VISION — Confirmación
+// ============================================================
+async function clasificarGemini(base64Img) {
+    try {
+        const res = await fetch(GEMINI_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [
+                        {
+                            inline_data: {
+                                mime_type: 'image/jpeg',
+                                data: base64Img
+                            }
+                        },
+                        {
+                            text: `Eres un clasificador de residuos para el Instituto Tecnológico de Gustavo A. Madero (ITGAM) en la Ciudad de México.
+
+Observa esta imagen y clasifica el residuo en EXACTAMENTE una de estas 4 categorías:
+- organico (restos de comida, plantas, papel sucio de comida)
+- inorganico_reciclable (plástico, vidrio, metal, cartón limpio, papel limpio)
+- no_aprovechable (colillas, chicles, papel higiénico, envolturas metalizadas, residuos sanitarios)
+- peligroso (pilas, baterías, medicamentos, productos químicos, electrónicos)
+
+Responde ÚNICAMENTE con el nombre de la categoría, sin explicación ni puntuación.`
+                        }
+                    ]
+                }]
+            })
+        });
+
+        const data = await res.json();
+        const texto = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toLowerCase() || '';
+
+        // Buscar la clase en la respuesta
+        const claseGemini = CLASES_MODELO.find(c => texto.includes(c));
+        return claseGemini || null;
+
+    } catch (err) {
+        console.error('Error Gemini Vision:', err);
+        return null;
+    }
+}
+
+// ============================================================
+// GEMINI TEXTO — Dato curioso + Consejo
+// ============================================================
+async function obtenerDatoCurioso(clase) {
+    try {
+        const nombre = NOMBRES_CLASE[clase];
+        const res = await fetch(GEMINI_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{
+                        text: `Para un residuo clasificado como "${nombre}" en una institución educativa de la Ciudad de México:
+Genera EN ESPAÑOL un dato curioso breve y un consejo de reciclaje.
+Máximo 2 oraciones en total. Sé conciso, educativo y usa un tono amigable.
+No uses emojis ni viñetas. Solo texto corrido.`
+                    }]
+                }]
+            })
+        });
+
+        const data = await res.json();
+        return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+
+    } catch (err) {
+        console.error('Error Gemini Texto:', err);
+        return 'No se pudo obtener información adicional.';
+    }
+}
+
+// ============================================================
+// FLUJO DE CLASIFICACIÓN PRINCIPAL
+// ============================================================
+async function clasificar() {
+    if (analizando || !modelo) return;
+    analizando = true;
+
+    // UI: iniciar análisis
+    $btnClasif.classList.add('analizando');
+    $btnClasif.textContent = 'ANALIZANDO...';
+    $scanOverlay.classList.add('activo');
+    $statusBar.classList.add('cargando');
+    $resOverlay.classList.remove('visible');
+    limpiarContenedores();
+
+    // Capturar imagen para Gemini antes de la inferencia
+    const base64 = canvasABase64();
+
+    // Ejecutar ambos motores en paralelo
+    const [resultadoLocal, claseGemini] = await Promise.all([
+        clasificarLocal(),
+        clasificarGemini(base64)
+    ]);
+
+    // Determinar resultado final
+    let claseFinal = resultadoLocal.clase;
+    let confianzaFinal = resultadoLocal.confianza;
+    let concordancia = false;
+
+    if (claseGemini) {
+        concordancia = (resultadoLocal.clase === claseGemini);
+        if (!concordancia) {
+            // Gemini tiene la última palabra
+            claseFinal = claseGemini;
+            confianzaFinal = resultadoLocal.todas[claseGemini] || 0;
+        }
+    }
+
+    // Detener scan
+    $scanOverlay.classList.remove('activo');
+
+    // Mostrar resultado
+    mostrarResultado(claseFinal, confianzaFinal, concordancia, claseGemini, resultadoLocal.clase);
+
+    // Obtener dato curioso (no bloquea el resultado)
+    obtenerDatoCurioso(claseFinal).then(dato => {
+        $resDato.textContent = dato;
+    });
+
+    // UI: restaurar botón
+    $btnClasif.classList.remove('analizando');
+    $btnClasif.textContent = 'CLASIFICAR';
+    $statusBar.classList.remove('cargando');
+    analizando = false;
+}
+
+// ============================================================
+// MOSTRAR RESULTADO
+// ============================================================
+function mostrarResultado(clase, confianza, concordancia, claseGemini, claseLocal) {
+    const nombre = NOMBRES_CLASE[clase] || clase.toUpperCase();
+    const color = COLORES_CLASE[clase] || '#fff';
+    const porciento = (confianza * 100).toFixed(1);
+
+    // Texto de clase
+    $resClase.textContent = nombre;
+    $resClase.style.color = color;
+
+    // Confianza
+    $resConf.textContent = `${porciento}%`;
+
+    // Badge de concordancia
+    if (claseGemini && concordancia) {
+        $resBadge.textContent = '✓ ALTA CONFIANZA';
+        $resBadge.className = 'badge badge-alta';
+    } else if (claseGemini && !concordancia) {
+        $resBadge.textContent = `GEMINI: ${NOMBRES_CLASE[claseGemini] || ''} · LOCAL: ${NOMBRES_CLASE[claseLocal] || ''}`;
+        $resBadge.className = 'badge badge-gemini';
+    } else {
+        $resBadge.textContent = 'SIN VERIFICACIÓN';
+        $resBadge.className = 'badge badge-gemini';
+    }
+
+    // Dato curioso — placeholder mientras carga
+    $resDato.textContent = 'Generando dato curioso...';
+
+    // Mostrar overlay
+    $resOverlay.classList.add('visible');
+
+    // Activar contenedor correcto
+    activarContenedor(clase);
+}
+
+// ============================================================
+// CONTENEDORES
+// ============================================================
+function activarContenedor(clase) {
+    limpiarContenedores();
+    const item = document.querySelector(`.contenedor-item[data-clase="${clase}"]`);
+    if (item) {
+        item.classList.add('activo');
+    }
+}
+
+function limpiarContenedores() {
+    document.querySelectorAll('.contenedor-item').forEach(el => {
+        el.classList.remove('activo');
+    });
+}
+
+// ============================================================
+// EVENTOS
+// ============================================================
+
+// Botón clasificar
+$btnClasif.addEventListener('click', clasificar);
+
+// Cambiar cámara
+$btnCamara.addEventListener('click', () => {
+    usandoCamaraFrontal = !usandoCamaraFrontal;
+    iniciarCamara();
+});
+
+// Galería
+$btnGaleria.addEventListener('click', () => $inputGal.click());
+
+$inputGal.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        $previewGal.src = ev.target.result;
+        $previewGal.style.display = 'block';
+
+        // Esperar a que cargue para poder clasificar
+        $previewGal.onload = () => {
+            clasificar();
+        };
+    };
+    reader.readAsDataURL(file);
+
+    // Resetear input para permitir volver a seleccionar el mismo archivo
+    e.target.value = '';
+});
+
+// Tap en cámara para volver al video si estaba en galería
+$video.addEventListener('click', () => {
+    if ($previewGal.style.display === 'block') {
+        $previewGal.style.display = 'none';
+        $resOverlay.classList.remove('visible');
+        limpiarContenedores();
+    }
+});
+
+// ============================================================
+// ARRANQUE
+// ============================================================
+inicializar();
+
+// Registrar Service Worker para PWA
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+}
+</script>
+
+</body>
+</html>
