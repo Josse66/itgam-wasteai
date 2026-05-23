@@ -38,6 +38,12 @@ self.addEventListener('activate', (e) => {
 });
 
 // Fetch — cache first para modelo, network first para API
+self.addEventListener('fetch', event => {
+    // No interceptar POST (llamadas a API)
+    if (event.request.method !== 'GET') return;
+    
+    // ... resto del código que ya tienes
+});
 self.addEventListener('fetch', (e) => {
     const url = new URL(e.request.url);
 
