@@ -689,9 +689,8 @@ async function inicializar() {
 
         // Paso 2: Warmup — primera inferencia es lenta
         // Warmup
-        const dummy = tf.zeros([1, IMG_SIZE, IMG_SIZE, 3]);
-        tf.tidy(() => modelo.execute(tensor));
-        dummy.dispose();
+        // Warmup
+        tf.tidy(() => modelo.execute(tf.zeros([1, IMG_SIZE, IMG_SIZE, 3])));
         actualizarCarga('Motor listo ✓', 90);
 
         // Paso 3: Iniciar cámara
