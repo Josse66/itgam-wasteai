@@ -456,10 +456,14 @@
 // ============================================================
 
 // Orden de clases — DEBE coincidir con el orden de ImageFolder (alfabético)
-// Verificado en ambos entrenamientos:
+// Verificado en los tres entrenamientos:
 // V1: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso']
 // V2: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso']
-const CLASES = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
+// V3: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'] ← Keras alphabetical
+const CLASES    = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
+// V3 usa image_dataset_from_directory con class_names explícito:
+// ['organico', 'inorganico_reciclable', 'no_aprovechable', 'peligroso']
+const CLASES_V3 = ['organico', 'inorganico_reciclable', 'no_aprovechable', 'peligroso'];
 
 const NOMBRES = {
     organico:              'ORGÁNICO',
@@ -480,15 +484,17 @@ const MEAN    = [0.485, 0.456, 0.406];
 const STD     = [0.229, 0.224, 0.225];
 const IMG_SIZE = 224;
 
-// Rutas de los dos modelos
-const PATH_V1 = 'model/wasteai_final.onnx';  // EfficientNetB0 entrenado con datasets originales
-const PATH_V2 = 'model/wasteai_v2.onnx';     // EfficientNetB0 entrenado con datasets especializados
+// Rutas de los tres modelos
+const PATH_V1 = 'model/wasteai_final.onnx';  // EfficientNetB0 — datasets originales (PyTorch/NCHW)
+const PATH_V2 = 'model/wasteai_v2.onnx';     // EfficientNetB0 — datasets especializados (PyTorch/NCHW)
+const PATH_V3 = 'model/wasteai_v3.onnx';     // EfficientNetB0 — 67k imgs, 95% acc (Keras/NHWC)
 
 // ============================================================
 // ESTADO GLOBAL
 // ============================================================
 let sesionV1 = null;
 let sesionV2 = null;
+let sesionV3 = null;
 let streamCamara = null;
 let usandoCamaraFrontal = false;
 let analizando = false;
@@ -572,32 +578,37 @@ async function inicializar() {
 
         actualizarCarga('Preparando motores de IA...', 2);
 
-        // Descargar ambos modelos en paralelo (más rápido que secuencial)
-        const [bufV1, bufV2] = await Promise.all([
-            descargarModelo(PATH_V1, 2,  45, 'Modelo Principal'),
-            descargarModelo(PATH_V2, 45, 88, 'Modelo Especializado')
+        // Descargar los tres modelos en paralelo
+        const [bufV1, bufV2, bufV3] = await Promise.all([
+            descargarModelo(PATH_V1, 2,  35, 'Modelo V1'),
+            descargarModelo(PATH_V2, 35, 68, 'Modelo V2'),
+            descargarModelo(PATH_V3, 68, 88, 'Modelo V3')
         ]);
 
         actualizarCarga('Cargando modelos en memoria...', 88);
 
-        // Crear sesiones ONNX — ambos con WASM para máxima compatibilidad
+        // Crear sesiones ONNX
         const opciones = {
             executionProviders: ['wasm'],
             graphOptimizationLevel: 'all'
         };
-        [sesionV1, sesionV2] = await Promise.all([
+        [sesionV1, sesionV2, sesionV3] = await Promise.all([
             ort.InferenceSession.create(bufV1, opciones),
-            ort.InferenceSession.create(bufV2, opciones)
+            ort.InferenceSession.create(bufV2, opciones),
+            ort.InferenceSession.create(bufV3, opciones)
         ]);
 
         actualizarCarga('Calentando motores...', 93);
 
-        // Warmup — la primera inferencia siempre es lenta, la hacemos invisible al usuario
-        const dummy = new ort.Tensor('float32',
+        // Warmup — V1/V2 usan NCHW, V3 usa NHWC
+        const dummyNCHW = new ort.Tensor('float32',
             new Float32Array(3 * IMG_SIZE * IMG_SIZE), [1, 3, IMG_SIZE, IMG_SIZE]);
+        const dummyNHWC = new ort.Tensor('float32',
+            new Float32Array(IMG_SIZE * IMG_SIZE * 3), [1, IMG_SIZE, IMG_SIZE, 3]);
         await Promise.all([
-            sesionV1.run({ input: dummy }),
-            sesionV2.run({ input: dummy })
+            sesionV1.run({ input: dummyNCHW }),
+            sesionV2.run({ input: dummyNCHW }),
+            sesionV3.run({ input: dummyNHWC })
         ]);
 
         actualizarCarga('Activando cámara...', 96);
@@ -636,8 +647,7 @@ async function iniciarCamara() {
 }
 
 // ============================================================
-// PREPROCESAMIENTO
-// Convierte el frame a tensor NCHW float32 con normalización ImageNet
+// PREPROCESAMIENTO V1/V2 — NCHW float32 con normalización ImageNet
 // ============================================================
 function preprocesar() {
     $canvas.width  = IMG_SIZE;
@@ -672,6 +682,29 @@ function preprocesar() {
     return new ort.Tensor('float32', chw, [1, 3, IMG_SIZE, IMG_SIZE]);
 }
 
+// ============================================================
+// PREPROCESAMIENTO V3 — NHWC float32, píxeles 0-255
+// EfficientNetB0 de Keras incluye su propio rescaling interno
+// ============================================================
+function preprocesarV3() {
+    // Reusar el canvas ya dibujado por preprocesar()
+    const rgba = $ctx.getImageData(0, 0, IMG_SIZE, IMG_SIZE).data;
+    const nhwc = new Float32Array(IMG_SIZE * IMG_SIZE * 3);
+
+    // NHWC: [fila][col][canal], valores 0-255
+    for (let y = 0; y < IMG_SIZE; y++) {
+        for (let x = 0; x < IMG_SIZE; x++) {
+            const src = (y * IMG_SIZE + x) * 4;
+            const dst = (y * IMG_SIZE + x) * 3;
+            nhwc[dst]     = rgba[src];       // R
+            nhwc[dst + 1] = rgba[src + 1];   // G
+            nhwc[dst + 2] = rgba[src + 2];   // B
+        }
+    }
+
+    return new ort.Tensor('float32', nhwc, [1, IMG_SIZE, IMG_SIZE, 3]);
+}
+
 // Captura JPEG para Gemini (512×512 es suficiente y más rápido)
 function capturarBase64() {
     const c   = document.createElement('canvas');
@@ -690,46 +723,62 @@ function capturarBase64() {
 }
 
 // ============================================================
-// INFERENCIA ENSEMBLE — corre V1 y V2 en paralelo y promedia
+// INFERENCIA ENSEMBLE — corre V1, V2 y V3 en paralelo y pondera
 // ============================================================
 async function clasificarEnsemble() {
-    const tensor = preprocesar();
+    const tensorNCHW = preprocesar();        // V1 y V2: NCHW + ImageNet norm
+    const tensorNHWC = preprocesarV3();      // V3: NHWC + píxeles 0-255
 
-    // Ejecutar ambos modelos en paralelo
-    const [outV1, outV2] = await Promise.all([
-        sesionV1.run({ input: tensor }),
-        sesionV2.run({ input: tensor })
+    // Ejecutar los tres modelos en paralelo
+    const [outV1, outV2, outV3] = await Promise.all([
+        sesionV1.run({ input: tensorNCHW }),
+        sesionV2.run({ input: tensorNCHW }),
+        sesionV3.run({ input: tensorNHWC })
     ]);
 
     const logitsV1 = Array.from(Object.values(outV1)[0].data);
     const logitsV2 = Array.from(Object.values(outV2)[0].data);
+    const logitsV3raw = Array.from(Object.values(outV3)[0].data);
 
-    const probsV1  = softmax(logitsV1);
-    const probsV2  = softmax(logitsV2);
+    const probsV1 = softmax(logitsV1);
+    const probsV2 = softmax(logitsV2);
 
-    // Decisión de ponderación:
-    // Si V1 tiene alta confianza (>85%) → 70% V1 + 30% V2
-    // Si V1 tiene baja confianza (<85%) → 50% V1 + 50% V2
-    // V2 está especializado en las clases débiles, así que siempre aporta
+    // V3 usa CLASES_V3 (orden diferente) → remapear a orden CLASES
+    const probsV3raw = softmax(logitsV3raw);
+    const probsV3 = CLASES.map(c => probsV3raw[CLASES_V3.indexOf(c)]);
+
+    // Ponderación dinámica según confianza de V1:
+    // V1 alta confianza (≥85%): V1=50%, V2=20%, V3=30%  ← V3 es el más grande (67k imgs)
+    // V1 baja confianza (<85%): V1=34%, V2=33%, V3=33%  ← peso igual entre los tres
     const maxV1 = Math.max(...probsV1);
-    const w1 = maxV1 >= 0.85 ? 0.70 : 0.50;
-    const w2 = 1 - w1;
+    let w1, w2, w3;
+    if (maxV1 >= 0.85) {
+        w1 = 0.50; w2 = 0.20; w3 = 0.30;
+    } else {
+        w1 = 0.34; w2 = 0.33; w3 = 0.33;
+    }
 
-    const ensemble = probsV1.map((p, i) => w1 * p + w2 * probsV2[i]);
+    const ensemble = probsV1.map((p, i) => w1 * p + w2 * probsV2[i] + w3 * probsV3[i]);
 
-    // Clase con mayor probabilidad ensemble
     let maxIdx = 0;
     for (let i = 1; i < ensemble.length; i++) {
         if (ensemble[i] > ensemble[maxIdx]) maxIdx = i;
     }
 
+    const v1Clase = CLASES[probsV1.indexOf(Math.max(...probsV1))];
+    const v2Clase = CLASES[probsV2.indexOf(Math.max(...probsV2))];
+    const v3Clase = CLASES[probsV3.indexOf(Math.max(...probsV3))];
+
     return {
         clase:     CLASES[maxIdx],
         confianza: ensemble[maxIdx],
         todas:     Object.fromEntries(CLASES.map((c, i) => [c, ensemble[i]])),
-        v1_clase:  CLASES[probsV1.indexOf(Math.max(...probsV1))],
-        v2_clase:  CLASES[probsV2.indexOf(Math.max(...probsV2))],
-        v1_conf:   maxV1
+        v1_clase:  v1Clase,
+        v2_clase:  v2Clase,
+        v3_clase:  v3Clase,
+        v1_conf:   maxV1,
+        // Cuántos modelos coinciden con el resultado final
+        coincidencias: [v1Clase, v2Clase, v3Clase].filter(c => c === CLASES[maxIdx]).length
     };
 }
 
@@ -781,7 +830,7 @@ async function obtenerDato(clase) {
 // ============================================================
 async function clasificar() {
     // Guardia doble: analizando + disabled para evitar doble tap
-    if (analizando || !sesionV1 || !sesionV2) return;
+    if (analizando || !sesionV1 || !sesionV2 || !sesionV3) return;
     analizando = true;
     $btnClasif.disabled = true;
     $btnClasif.textContent = 'ANALIZANDO...';
@@ -847,8 +896,9 @@ function mostrarResultado(clase, confianza, modo, resEnsemble) {
     $resConf.textContent  = (confianza * 100).toFixed(1) + '%';
     $resDato.textContent  = '';
 
-    // V1 y V2 coinciden entre sí → mostrar detalle del ensemble
-    const v1v2Coinciden = resEnsemble.v1_clase === resEnsemble.v2_clase;
+    // V1, V2 y V3 coinciden entre sí
+    const todosCoinciden = resEnsemble.coincidencias === 3;
+    const dosCoinciden   = resEnsemble.coincidencias === 2;
 
     switch (modo) {
         case 'alta-confianza':
@@ -860,11 +910,14 @@ function mostrarResultado(clase, confianza, modo, resEnsemble) {
             $resBadge.className   = 'badge badge-gemini';
             break;
         default: // 'ensemble'
-            if (v1v2Coinciden) {
-                $resBadge.textContent = '◈ ENSEMBLE V1+V2 COINCIDEN';
+            if (todosCoinciden) {
+                $resBadge.textContent = '◈ ENSEMBLE V1+V2+V3 COINCIDEN';
+                $resBadge.className   = 'badge badge-ensemble';
+            } else if (dosCoinciden) {
+                $resBadge.textContent = '◈ ENSEMBLE V1+V2+V3 (2/3)';
                 $resBadge.className   = 'badge badge-ensemble';
             } else {
-                $resBadge.textContent = '◈ ENSEMBLE V1+V2';
+                $resBadge.textContent = '◈ ENSEMBLE V1+V2+V3';
                 $resBadge.className   = 'badge badge-ensemble';
             }
     }
