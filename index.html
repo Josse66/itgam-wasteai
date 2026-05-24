@@ -457,12 +457,12 @@
 
 // Orden de clases — DEBE coincidir con el orden de ImageFolder (alfabético)
 // Verificado en los tres entrenamientos:
-// V1: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso']
-// V2: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso']
-// V3: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'] ← Keras alphabetical
+// V1: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'] ← PyTorch, alfabético
+// V2: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'] ← PyTorch, alfabético
 const CLASES    = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
-// V3 usa image_dataset_from_directory con class_names explícito:
-// ['organico', 'inorganico_reciclable', 'no_aprovechable', 'peligroso']
+// V3 usa image_dataset_from_directory con class_names EXPLÍCITO (no alfabético):
+//   class_names=['organico','inorganico_reciclable','no_aprovechable','peligroso']
+// → el índice de salida del modelo sigue ese orden, NO el alfabético
 const CLASES_V3 = ['organico', 'inorganico_reciclable', 'no_aprovechable', 'peligroso'];
 
 const NOMBRES = {
@@ -789,7 +789,7 @@ async function clasificarGemini(base64) {
     if (!base64 || base64.length < 100) return null;
     try {
         const ctrl    = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 30000);
+        const timeout = setTimeout(() => ctrl.abort(), 25000); // alineado con Edge Function (22s/intento + margen)
         const res     = await fetch('/api/gemini', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
