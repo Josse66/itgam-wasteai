@@ -496,6 +496,9 @@ let sesionV1 = null;
 let sesionV2 = null;
 let sesionV3 = null;
 let streamCamara = null;
+// Caché de datos curiosos — máximo 1 llamada por clase por sesión
+const DATO_CACHE = new Map();          // clase → texto ya obtenido
+const DATO_PENDIENTE = new Map();      // clase → Promise en vuelo (evita llamadas duplicadas)
 let usandoCamaraFrontal = false;
 let analizando = false;
 
@@ -833,26 +836,52 @@ async function clasificarGemini(base64) {
 }
 
 async function obtenerDato(clase) {
-    try {
-        console.log(`[DEBUG] obtenerDato: pidiendo dato para "${clase}"`);
-        const t0 = Date.now();
-        const ctrl    = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 15000);
-        const res     = await fetch('/api/gemini', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ tipo: 'dato', clase }),
-            signal:  ctrl.signal
-        });
-        clearTimeout(timeout);
-        const elapsed = Date.now() - t0;
-        const data = await res.json();
-        console.log(`[DEBUG] obtenerDato: HTTP ${res.status} en ${elapsed}ms texto="${(data.texto || '').substring(0, 50)}..."`);
-        return data.texto || '';
-    } catch (err) {
-        console.warn('[DEBUG] obtenerDato: excepción:', err.message);
-        return '';
+    // ── Caché hit — ya lo tenemos, sin llamada a API ──
+    if (DATO_CACHE.has(clase)) {
+        const cached = DATO_CACHE.get(clase);
+        console.log(`[DEBUG] obtenerDato: CACHE HIT para "${clase}" → "${cached.substring(0, 40)}..."`);
+        return cached;
     }
+
+    // ── Llamada en vuelo — otra clasificación ya pidió este dato ──
+    if (DATO_PENDIENTE.has(clase)) {
+        console.log(`[DEBUG] obtenerDato: esperando llamada en vuelo para "${clase}"`);
+        return DATO_PENDIENTE.get(clase);
+    }
+
+    // ── Llamada nueva — primera vez que se pide esta clase ──
+    console.log(`[DEBUG] obtenerDato: llamada NUEVA para "${clase}"`);
+    const promesa = (async () => {
+        try {
+            const t0 = Date.now();
+            const ctrl    = new AbortController();
+            const timeout = setTimeout(() => ctrl.abort(), 15000);
+            const res     = await fetch('/api/gemini', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ tipo: 'dato', clase }),
+                signal:  ctrl.signal
+            });
+            clearTimeout(timeout);
+            const elapsed = Date.now() - t0;
+            const data = await res.json();
+            const texto = data.texto || '';
+            console.log(`[DEBUG] obtenerDato: OK ${elapsed}ms "${texto.substring(0, 50)}..."`);
+
+            if (texto) {
+                DATO_CACHE.set(clase, texto);  // guardar en caché solo si hay contenido
+            }
+            return texto;
+        } catch (err) {
+            console.warn('[DEBUG] obtenerDato: excepción:', err.message);
+            return '';
+        } finally {
+            DATO_PENDIENTE.delete(clase);  // limpiar promesa en vuelo siempre
+        }
+    })();
+
+    DATO_PENDIENTE.set(clase, promesa);
+    return promesa;
 }
 
 // ============================================================
