@@ -3,6 +3,8 @@
 // La key va en Vercel Environment Variables, no en el código
 // ============================================================
 
+export const maxDuration = 10;
+
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
@@ -68,17 +70,31 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: 'Tipo inválido. Usa "vision" o "dato".' });
         }
 
-       const geminiRes = await fetch(GEMINI_URL, {
-       method: 'POST',
-       headers: { 'Content-Type': 'application/json' },
-       body: JSON.stringify(payload)
-       });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-       if (geminiRes.status === 429) {
-       return res.status(200).json({ fallback: true, message: 'Límite de consultas alcanzado' });
-       }
+        let geminiRes;
+        try {
+            geminiRes = await fetch(GEMINI_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                signal: controller.signal
+            });
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') {
+                return res.status(200).json({ fallback: true, message: 'Tiempo de respuesta agotado' });
+            }
+            return res.status(200).json({ texto: null, error: 'Error conectando con Gemini' });
+        }
+        clearTimeout(timeoutId);
 
-const data = await geminiRes.json();
+        if (geminiRes.status === 429) {
+            return res.status(200).json({ fallback: true, message: 'Límite de consultas alcanzado' });
+        }
+
+        const data = await geminiRes.json();
 
         if (!geminiRes.ok || data.error) {
             console.error('Gemini error:', JSON.stringify(data.error || {}));
