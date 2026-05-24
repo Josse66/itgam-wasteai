@@ -496,6 +496,23 @@ let sesionV1 = null;
 let sesionV2 = null;
 let sesionV3 = null;
 let streamCamara = null;
+// Fallbacks locales — se usan cuando Gemini no está disponible (429, timeout, sin red)
+// Garantizan que el dato curioso SIEMPRE muestre algo, nunca quede vacío
+const DATO_FALLBACK = {
+    organico:
+        'Los residuos orgánicos representan casi el 50% de la basura generada en México. ' +
+        'Sepáralos para hacer composta y enriquecer el suelo sin productos químicos.',
+    inorganico_reciclable:
+        'Reciclar una tonelada de plástico ahorra el equivalente a 5,774 kWh de energía. ' +
+        'Enjuaga los envases antes de depositarlos en el contenedor amarillo.',
+    no_aprovechable:
+        'Los residuos no aprovechables terminan en rellenos sanitarios por décadas. ' +
+        'Reducirlos empieza por elegir productos con menos empaques y más reutilizables.',
+    peligroso:
+        'Las pilas contienen mercurio y cadmio que contaminan suelo y agua por siglos. ' +
+        'Lleva las pilas gastadas a los puntos de recolección especializados del ITGAM.'
+};
+
 // Caché de datos curiosos — máximo 1 llamada por clase por sesión
 const DATO_CACHE = new Map();          // clase → texto ya obtenido
 const DATO_PENDIENTE = new Map();      // clase → Promise en vuelo (evita llamadas duplicadas)
@@ -839,13 +856,13 @@ async function obtenerDato(clase) {
     // ── Caché hit — ya lo tenemos, sin llamada a API ──
     if (DATO_CACHE.has(clase)) {
         const cached = DATO_CACHE.get(clase);
-        console.log(`[DEBUG] obtenerDato: CACHE HIT para "${clase}" → "${cached.substring(0, 40)}..."`);
+        console.log(`[DEBUG] obtenerDato: CACHE HIT "${clase}"`);
         return cached;
     }
 
     // ── Llamada en vuelo — otra clasificación ya pidió este dato ──
     if (DATO_PENDIENTE.has(clase)) {
-        console.log(`[DEBUG] obtenerDato: esperando llamada en vuelo para "${clase}"`);
+        console.log(`[DEBUG] obtenerDato: en vuelo "${clase}" — esperando...`);
         return DATO_PENDIENTE.get(clase);
     }
 
@@ -855,7 +872,7 @@ async function obtenerDato(clase) {
         try {
             const t0 = Date.now();
             const ctrl    = new AbortController();
-            const timeout = setTimeout(() => ctrl.abort(), 15000);
+            const timeout = setTimeout(() => ctrl.abort(), 12000);
             const res     = await fetch('/api/gemini', {
                 method:  'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -863,20 +880,28 @@ async function obtenerDato(clase) {
                 signal:  ctrl.signal
             });
             clearTimeout(timeout);
-            const elapsed = Date.now() - t0;
-            const data = await res.json();
+            const data  = await res.json();
             const texto = data.texto || '';
-            console.log(`[DEBUG] obtenerDato: OK ${elapsed}ms "${texto.substring(0, 50)}..."`);
+            const elapsed = Date.now() - t0;
 
             if (texto) {
-                DATO_CACHE.set(clase, texto);  // guardar en caché solo si hay contenido
+                console.log(`[DEBUG] obtenerDato: Gemini OK ${elapsed}ms`);
+                DATO_CACHE.set(clase, texto);   // cachear respuesta de Gemini
+                return texto;
             }
-            return texto;
+
+            // Gemini respondió vacío (429, safety, etc.) → usar fallback
+            const fb = DATO_FALLBACK[clase] || '';
+            console.warn(`[DEBUG] obtenerDato: Gemini vacío (${elapsed}ms) → usando fallback`);
+            return fb;
+
         } catch (err) {
-            console.warn('[DEBUG] obtenerDato: excepción:', err.message);
-            return '';
+            // Timeout o sin red → fallback inmediato
+            const fb = DATO_FALLBACK[clase] || '';
+            console.warn(`[DEBUG] obtenerDato: error (${err.message}) → fallback`);
+            return fb;
         } finally {
-            DATO_PENDIENTE.delete(clase);  // limpiar promesa en vuelo siempre
+            DATO_PENDIENTE.delete(clase);
         }
     })();
 
