@@ -457,12 +457,12 @@
 
 // Orden de clases — DEBE coincidir con el orden de ImageFolder (alfabético)
 // Verificado en los tres entrenamientos:
-// V1: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'] ← PyTorch, alfabético
-// V2: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'] ← PyTorch, alfabético
+// V1: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso']
+// V2: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso']
+// V3: ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'] ← Keras alphabetical
 const CLASES    = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
-// V3 usa image_dataset_from_directory con class_names EXPLÍCITO (no alfabético):
-//   class_names=['organico','inorganico_reciclable','no_aprovechable','peligroso']
-// → el índice de salida del modelo sigue ese orden, NO el alfabético
+// V3 usa image_dataset_from_directory con class_names explícito:
+// ['organico', 'inorganico_reciclable', 'no_aprovechable', 'peligroso']
 const CLASES_V3 = ['organico', 'inorganico_reciclable', 'no_aprovechable', 'peligroso'];
 
 const NOMBRES = {
@@ -789,7 +789,7 @@ async function clasificarGemini(base64) {
     if (!base64 || base64.length < 100) return null;
     try {
         const ctrl    = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 25000); // alineado con Edge Function (22s/intento + margen)
+        const timeout = setTimeout(() => ctrl.abort(), 30000);
         const res     = await fetch('/api/gemini', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -842,40 +842,52 @@ async function clasificar() {
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
     try {
-        // Capturar base64 para Gemini mientras el hilo está libre
+        // Capturar base64 para Gemini ANTES de que el canvas cambie
         const base64 = capturarBase64();
 
-        // Ensemble + Gemini en paralelo
-        const [resEnsemble, claseGemini] = await Promise.all([
-            clasificarEnsemble(),
-            clasificarGemini(base64)
-        ]);
+        // ── Paso 1: Ensemble local (< 1s, sin red) ───────────────
+        const resEnsemble = await clasificarEnsemble();
 
-        // Lógica de resultado final
-        // Gemini actúa como árbitro cuando el ensemble tiene baja confianza
-        let claseFinal    = resEnsemble.clase;
-        let confianzaFinal = resEnsemble.confianza;
-        let modoResultado  = 'ensemble'; // 'ensemble' | 'gemini-corrige' | 'alta-confianza'
-
-        if (claseGemini) {
-            if (claseGemini === resEnsemble.clase) {
-                modoResultado = 'alta-confianza'; // Ensemble + Gemini coinciden
-            } else if (resEnsemble.confianza < 0.80) {
-                // Confianza baja → Gemini decide
-                claseFinal     = claseGemini;
-                confianzaFinal = resEnsemble.todas[claseGemini] || resEnsemble.confianza;
-                modoResultado  = 'gemini-corrige';
-            }
-            // Si confianza >= 0.80 y Gemini difiere, mantenemos ensemble
-        }
-
+        // ── Paso 2: Mostrar resultado INMEDIATAMENTE ──────────────
         $scanOverlay.classList.remove('activo');
-        mostrarResultado(claseFinal, confianzaFinal, modoResultado, resEnsemble);
+        mostrarResultado(resEnsemble.clase, resEnsemble.confianza, 'ensemble', resEnsemble);
 
-        // Dato curioso — no bloquea la UI
-        obtenerDato(claseFinal).then(dato => {
+        // ── Paso 3: Habilitar botón ya — no esperar a Gemini ──────
+        $btnClasif.disabled = false;
+        $btnClasif.textContent = 'CLASIFICAR';
+        analizando = false;
+
+        // ── Paso 4: Gemini + dato curioso en background ───────────
+        // Corre sólo si el overlay sigue visible (usuario no escaneó otra cosa)
+        Promise.all([
+            clasificarGemini(base64),
+            obtenerDato(resEnsemble.clase)
+        ]).then(([claseGemini, dato]) => {
             if (dato) $resDato.textContent = dato;
-        });
+
+            // No actualizar si el usuario ya escaneó otro objeto
+            if (!$resOverlay.classList.contains('visible')) return;
+
+            if (claseGemini) {
+                if (claseGemini === resEnsemble.clase) {
+                    // Coinciden → subir badge a alta confianza
+                    $resBadge.textContent = '✓ ALTA CONFIANZA · ENSEMBLE + IA';
+                    $resBadge.className   = 'badge badge-alta';
+                } else if (resEnsemble.confianza < 0.80) {
+                    // Confianza baja + Gemini difiere → Gemini corrige
+                    $resClase.textContent = NOMBRES[claseGemini] || claseGemini.toUpperCase();
+                    $resClase.style.color = COLORES[claseGemini] || '#fff';
+                    $resBadge.textContent = '⚡ GEMINI CORRIGE ENSEMBLE';
+                    $resBadge.className   = 'badge badge-gemini';
+                    activarContenedor(claseGemini);
+                    // Pedir dato curioso de la clase corregida
+                    obtenerDato(claseGemini).then(d => { if (d) $resDato.textContent = d; });
+                }
+                // confianza >= 0.80 y Gemini difiere → mantener ensemble (no se toca nada)
+            }
+        }).catch(() => {}); // Gemini falló — el resultado del ensemble ya está visible
+
+        return; // unlock ya fue arriba
 
     } catch (err) {
         console.error('Error al clasificar:', err);
