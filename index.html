@@ -755,40 +755,26 @@ async function clasificarEnsemble() {
     const v2Clase = CLASES[probsV2.indexOf(confV2)];
     const v3Clase = CLASES[probsV3.indexOf(confV3)];
 
-    const votos = [
-        { clase: v1Clase, conf: confV1, modelo: 'V1' },
-        { clase: v2Clase, conf: confV2, modelo: 'V2' },
-        { clase: v3Clase, conf: confV3, modelo: 'V3' }
-    ];
-
     // ── Votación ponderada por confianza ──
-    // Cada modelo "deposita" su confianza como peso en su clase favorita.
-    // Si V1=organico(0.72), V2=organico(0.65), V3=reciclable(0.58):
-    //   organico   = 0.72 + 0.65 = 1.37
-    //   reciclable = 0.58
-    //   → organico gana con confianza = 1.37 / (1.37+0.58) = 70.3%
     const pesosPorClase = {};
     CLASES.forEach(c => pesosPorClase[c] = 0);
-    votos.forEach(v => pesosPorClase[v.clase] += v.conf);
+    [{ clase: v1Clase, conf: confV1 }, { clase: v2Clase, conf: confV2 }, { clase: v3Clase, conf: confV3 }]
+        .forEach(v => pesosPorClase[v.clase] += v.conf);
 
     const pesoTotal = Object.values(pesosPorClase).reduce((a, b) => a + b, 0);
     const claseGanadora = Object.entries(pesosPorClase)
         .sort((a, b) => b[1] - a[1])[0][0];
 
-    // Confianza normalizada del ganador
     let confianza = pesosPorClase[claseGanadora] / pesoTotal;
 
     // ── Bonus de unanimidad / mayoría ──
-    const coincidencias = votos.filter(v => v.clase === claseGanadora).length;
+    const coincidencias = [v1Clase, v2Clase, v3Clase].filter(c => c === claseGanadora).length;
     if (coincidencias === 3) {
-        // Unanimidad → bonus proporcional a confianza promedio
         const confPromedio = (confV1 + confV2 + confV3) / 3;
         confianza = Math.min(0.98, confianza + confPromedio * 0.15);
     } else if (coincidencias === 2) {
-        // 2 de 3 → pequeño boost
         confianza = Math.min(0.95, confianza + 0.05);
     }
-    // Si ninguno coincide (3 clases distintas) → la confianza ya es baja naturalmente
 
     return {
         clase:     claseGanadora,
@@ -801,18 +787,22 @@ async function clasificarEnsemble() {
         v2_conf:   confV2,
         v3_conf:   confV3,
         coincidencias: coincidencias,
-        // Info para el árbitro local
         modelosDiscrepan: coincidencias < 3,
         confMinima: Math.min(confV1, confV2, confV3)
     };
 }
 
 // ============================================================
-// GEMINI — proxy serverless /api/gemini
+// GEMINI — proxy serverless /api/gemini (con debug logging)
 // ============================================================
 async function clasificarGemini(base64) {
-    if (!base64 || base64.length < 100) return null;
+    if (!base64 || base64.length < 100) {
+        console.log('[DEBUG] clasificarGemini: base64 vacío o muy corto');
+        return null;
+    }
     try {
+        console.log(`[DEBUG] clasificarGemini: enviando ${(base64.length / 1024).toFixed(0)}KB...`);
+        const t0 = Date.now();
         const ctrl    = new AbortController();
         const timeout = setTimeout(() => ctrl.abort(), 15000);
         const res     = await fetch('/api/gemini', {
@@ -822,18 +812,30 @@ async function clasificarGemini(base64) {
             signal:  ctrl.signal
         });
         clearTimeout(timeout);
-        if (!res.ok) return null;
+        const elapsed = Date.now() - t0;
+        console.log(`[DEBUG] clasificarGemini: HTTP ${res.status} en ${elapsed}ms`);
+
+        if (!res.ok) {
+            console.warn(`[DEBUG] clasificarGemini: HTTP no-ok ${res.status}`);
+            return null;
+        }
         const data  = await res.json();
+        console.log('[DEBUG] clasificarGemini: data =', JSON.stringify(data));
+
         const clase = (data.texto || '').trim();
-        return CLASES.includes(clase) ? clase : null;
+        const resultado = CLASES.includes(clase) ? clase : null;
+        console.log(`[DEBUG] clasificarGemini: clase="${clase}" válida=${!!resultado}`);
+        return resultado;
     } catch (err) {
-        console.warn('Gemini no disponible:', err.message);
+        console.warn('[DEBUG] clasificarGemini: excepción:', err.message);
         return null;
     }
 }
 
 async function obtenerDato(clase) {
     try {
+        console.log(`[DEBUG] obtenerDato: pidiendo dato para "${clase}"`);
+        const t0 = Date.now();
         const ctrl    = new AbortController();
         const timeout = setTimeout(() => ctrl.abort(), 15000);
         const res     = await fetch('/api/gemini', {
@@ -843,15 +845,18 @@ async function obtenerDato(clase) {
             signal:  ctrl.signal
         });
         clearTimeout(timeout);
+        const elapsed = Date.now() - t0;
         const data = await res.json();
+        console.log(`[DEBUG] obtenerDato: HTTP ${res.status} en ${elapsed}ms texto="${(data.texto || '').substring(0, 50)}..."`);
         return data.texto || '';
-    } catch {
+    } catch (err) {
+        console.warn('[DEBUG] obtenerDato: excepción:', err.message);
         return '';
     }
 }
 
 // ============================================================
-// FLUJO PRINCIPAL
+// FLUJO PRINCIPAL (con árbitro local + debug logging)
 // ============================================================
 async function clasificar() {
     // Guardia doble: analizando + disabled para evitar doble tap
@@ -870,7 +875,18 @@ async function clasificar() {
         const base64 = capturarBase64();
 
         // Ensemble local — rápido, sin red
+        const t0 = Date.now();
         const resEnsemble = await clasificarEnsemble();
+        const tEnsemble = Date.now() - t0;
+
+        console.log(`[DEBUG] Ensemble en ${tEnsemble}ms:`,
+            `clase=${resEnsemble.clase}`,
+            `conf=${(resEnsemble.confianza * 100).toFixed(1)}%`,
+            `V1=${resEnsemble.v1_clase}(${(resEnsemble.v1_conf*100).toFixed(0)}%)`,
+            `V2=${resEnsemble.v2_clase}(${(resEnsemble.v2_conf*100).toFixed(0)}%)`,
+            `V3=${resEnsemble.v3_clase}(${(resEnsemble.v3_conf*100).toFixed(0)}%)`,
+            `coincidencias=${resEnsemble.coincidencias}`
+        );
 
         // Mostrar resultado inmediatamente
         $scanOverlay.classList.remove('activo');
@@ -883,6 +899,7 @@ async function clasificar() {
 
         // ── ÁRBITRO LOCAL — decide si llamar a Gemini ──
         const necesitaGemini = resEnsemble.modelosDiscrepan && resEnsemble.confianza < 0.70;
+        console.log(`[DEBUG] Árbitro: discrepan=${resEnsemble.modelosDiscrepan} conf<70%=${resEnsemble.confianza < 0.70} → necesitaGemini=${necesitaGemini}`);
 
         if (necesitaGemini) {
             // Indicador visual: Gemini está procesando
@@ -892,11 +909,11 @@ async function clasificar() {
             // Gemini vision — solo cuando hay duda real
             clasificarGemini(base64).then(claseGemini => {
                 $resDato.style.opacity = '1';
+                console.log(`[DEBUG] Gemini respondió: claseGemini=${claseGemini}`);
 
                 if (!claseGemini) {
-                    // Gemini no disponible — indicar que se quedó con ensemble
+                    console.log('[DEBUG] Gemini retornó null — usando ensemble, pidiendo dato curioso');
                     $resDato.textContent = '';
-                    // Pedir dato curioso con la clase del ensemble
                     obtenerDato(resEnsemble.clase).then(dato => {
                         if (dato && $resOverlay.classList.contains('visible')) {
                             $resDato.textContent = dato;
@@ -905,14 +922,17 @@ async function clasificar() {
                     return;
                 }
 
-                if (!$resOverlay.classList.contains('visible')) return;
+                if (!$resOverlay.classList.contains('visible')) {
+                    console.log('[DEBUG] Overlay ya no visible — usuario escaneó otra cosa');
+                    return;
+                }
 
                 if (claseGemini === resEnsemble.clase) {
-                    // Gemini confirma → alta confianza
+                    console.log('[DEBUG] Gemini CONFIRMA ensemble → badge alta confianza');
                     $resBadge.textContent = '✓ ALTA CONFIANZA · ENSEMBLE + IA';
                     $resBadge.className   = 'badge badge-alta';
                 } else {
-                    // Gemini difiere y el ensemble tenía duda → corregir
+                    console.log(`[DEBUG] Gemini CORRIGE: ${resEnsemble.clase} → ${claseGemini}`);
                     $resClase.textContent = NOMBRES[claseGemini] || claseGemini.toUpperCase();
                     $resClase.style.color = COLORES[claseGemini] || '#fff';
                     $resBadge.textContent = '⚡ GEMINI CORRIGE ENSEMBLE';
@@ -921,20 +941,21 @@ async function clasificar() {
                 }
 
                 // Dato curioso con la clase definitiva
-                const claseParaDato = claseGemini === resEnsemble.clase ? resEnsemble.clase : claseGemini;
+                const claseParaDato = (claseGemini && claseGemini !== resEnsemble.clase) ? claseGemini : resEnsemble.clase;
                 obtenerDato(claseParaDato).then(dato => {
                     if (dato && $resOverlay.classList.contains('visible')) {
                         $resDato.textContent = dato;
                     }
                 }).catch(() => {});
 
-            }).catch(() => {
+            }).catch(err => {
+                console.warn('[DEBUG] clasificarGemini .catch:', err);
                 $resDato.style.opacity = '1';
                 $resDato.textContent = '';
             });
         } else {
             // Ensemble tiene confianza suficiente o todos coinciden → no llamar a Gemini
-            // Solo pedir dato curioso
+            console.log('[DEBUG] Sin Gemini — pidiendo solo dato curioso');
             obtenerDato(resEnsemble.clase).then(dato => {
                 if (dato && $resOverlay.classList.contains('visible')) {
                     $resDato.textContent = dato;
@@ -945,7 +966,7 @@ async function clasificar() {
         return;
 
     } catch (err) {
-        console.error('Error al clasificar:', err);
+        console.error('[DEBUG] Error en clasificar():', err);
         $scanOverlay.classList.remove('activo');
     }
 
@@ -1048,7 +1069,6 @@ inicializar();
 
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        // Forzar que el SW se actualice en cada visita (no cachear sw.js)
         navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
     });
 }
