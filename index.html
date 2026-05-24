@@ -842,50 +842,51 @@ async function clasificar() {
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
     try {
-        // Capturar base64 para Gemini ANTES de que el canvas cambie
         const base64 = capturarBase64();
 
-        // ── Paso 1: Ensemble local (< 1s, sin red) ───────────────
+        // Ensemble local — rápido, sin red
         const resEnsemble = await clasificarEnsemble();
 
-        // ── Paso 2: Mostrar resultado INMEDIATAMENTE ──────────────
+        // Mostrar resultado inmediatamente
         $scanOverlay.classList.remove('activo');
         mostrarResultado(resEnsemble.clase, resEnsemble.confianza, 'ensemble', resEnsemble);
 
-        // ── Paso 3: Habilitar botón ya — no esperar a Gemini ──────
+        // Rehabilitar botón sin esperar a Gemini
         $btnClasif.disabled = false;
         $btnClasif.textContent = 'CLASIFICAR';
         analizando = false;
 
-        // ── Paso 4: Gemini + dato curioso en background ───────────
-        // Corre sólo si el overlay sigue visible (usuario no escaneó otra cosa)
-        Promise.all([
-            clasificarGemini(base64),
-            obtenerDato(resEnsemble.clase)
-        ]).then(([claseGemini, dato]) => {
-            if (dato) $resDato.textContent = dato;
-
-            // No actualizar si el usuario ya escaneó otro objeto
-            if (!$resOverlay.classList.contains('visible')) return;
-
-            if (claseGemini) {
-                if (claseGemini === resEnsemble.clase) {
-                    // Coinciden → subir badge a alta confianza
-                    $resBadge.textContent = '✓ ALTA CONFIANZA · ENSEMBLE + IA';
-                    $resBadge.className   = 'badge badge-alta';
-                } else if (resEnsemble.confianza < 0.80) {
-                    // Confianza baja + Gemini difiere → Gemini corrige
-                    $resClase.textContent = NOMBRES[claseGemini] || claseGemini.toUpperCase();
-                    $resClase.style.color = COLORES[claseGemini] || '#fff';
-                    $resBadge.textContent = '⚡ GEMINI CORRIGE ENSEMBLE';
-                    $resBadge.className   = 'badge badge-gemini';
-                    activarContenedor(claseGemini);
-                    // Pedir dato curioso de la clase corregida
-                    obtenerDato(claseGemini).then(d => { if (d) $resDato.textContent = d; });
-                }
-                // confianza >= 0.80 y Gemini difiere → mantener ensemble (no se toca nada)
+        // Dato curioso — independiente, no bloquea nada
+        obtenerDato(resEnsemble.clase).then(dato => {
+            if (dato && $resOverlay.classList.contains('visible')) {
+                $resDato.textContent = dato;
             }
-        }).catch(() => {}); // Gemini falló — el resultado del ensemble ya está visible
+        }).catch(() => {});
+
+        // Gemini vision — independiente del dato curioso
+        // Actualiza badge en cuanto responde, sin esperar al dato
+        clasificarGemini(base64).then(claseGemini => {
+            if (!claseGemini) return; // Gemini no disponible o safety filter
+            if (!$resOverlay.classList.contains('visible')) return; // usuario ya escaneó otra cosa
+
+            if (claseGemini === resEnsemble.clase) {
+                // Coinciden → subir badge
+                $resBadge.textContent = '✓ ALTA CONFIANZA · ENSEMBLE + IA';
+                $resBadge.className   = 'badge badge-alta';
+            } else if (resEnsemble.confianza < 0.80) {
+                // Confianza baja y Gemini difiere → corregir
+                $resClase.textContent = NOMBRES[claseGemini] || claseGemini.toUpperCase();
+                $resClase.style.color = COLORES[claseGemini] || '#fff';
+                $resBadge.textContent = '⚡ GEMINI CORRIGE ENSEMBLE';
+                $resBadge.className   = 'badge badge-gemini';
+                activarContenedor(claseGemini);
+                // Reemplazar dato curioso con la clase corregida
+                obtenerDato(claseGemini).then(d => {
+                    if (d && $resOverlay.classList.contains('visible')) $resDato.textContent = d;
+                }).catch(() => {});
+            }
+            // confianza >= 0.80 y Gemini difiere → mantener ensemble, no tocar nada
+        }).catch(() => {});
 
         return; // unlock ya fue arriba
 
