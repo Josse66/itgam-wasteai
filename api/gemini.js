@@ -68,13 +68,17 @@ export default async function handler(req, res) {
             return res.status(400).json({ error: 'Tipo inválido. Usa "vision" o "dato".' });
         }
 
-        const geminiRes = await fetch(GEMINI_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+       const geminiRes = await fetch(GEMINI_URL, {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+       body: JSON.stringify(payload)
+       });
 
-        const data = await geminiRes.json();
+       if (geminiRes.status === 429) {
+       return res.status(200).json({ fallback: true, message: 'Límite de consultas alcanzado' });
+       }
+
+const data = await geminiRes.json();
 
         if (!geminiRes.ok || data.error) {
             console.error('Gemini error:', JSON.stringify(data.error || {}));
