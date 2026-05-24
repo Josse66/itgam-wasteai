@@ -22,6 +22,7 @@ export default async function handler(req, res) {
 
     if (tipo === 'vision') {
         if (!base64Img || base64Img.length < 500) {
+            console.warn('Gemini vision: imagen demasiado pequeña o vacía');
             return res.status(400).json({ error: 'Imagen inválida', texto: null });
         }
         payload = {
@@ -31,7 +32,14 @@ export default async function handler(req, res) {
                     { text: 'Clasifica este residuo en UNA de estas categorías. Responde SOLO con el número correspondiente, sin texto adicional:\n1 = organico (restos de comida, frutas, verduras, plantas, papel sucio de comida)\n2 = inorganico_reciclable (plástico, vidrio, metal, cartón limpio, papel limpio, latas)\n3 = no_aprovechable (colillas, chicles, papel higiénico, envolturas metalizadas, residuos sanitarios, unicel sucio)\n4 = peligroso (pilas, baterías, medicamentos, productos químicos, electrónicos, focos)\nResponde SOLO el número.' }
                 ]
             }],
-            generationConfig: { maxOutputTokens: 10, temperature: 0 }
+            generationConfig: { maxOutputTokens: 10, temperature: 0 },
+            // Relajar safety settings para evitar bloqueos en imágenes de basura
+            safetySettings: [
+                { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+                { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+                { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
+                { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' }
+            ]
         };
 
     } else if (tipo === 'dato') {
@@ -65,21 +73,30 @@ export default async function handler(req, res) {
         clearTimeout(timeoutId);
 
         if (geminiRes.status === 429) {
+            console.warn(`Gemini ${tipo}: rate limit 429`);
             return res.status(200).json({ fallback: true, texto: null });
         }
 
         const data = await geminiRes.json();
 
         if (!geminiRes.ok || data.error) {
-            console.error(`Gemini ${tipo} error:`, data.error?.message || geminiRes.status);
+            console.error(`Gemini ${tipo} error HTTP ${geminiRes.status}:`, data.error?.message || 'sin detalle');
             return res.status(200).json({ texto: null });
         }
 
         // Candidates vacío = safety filter de Gemini
         const candidates = data.candidates || [];
         if (candidates.length === 0) {
-            console.warn(`Gemini ${tipo}: candidates vacío (safety filter o sin respuesta)`);
-            return res.status(200).json({ texto: null });
+            const blockReason = data.promptFeedback?.blockReason || 'desconocido';
+            console.warn(`Gemini ${tipo}: candidates vacío — blockReason=${blockReason}`);
+            return res.status(200).json({ texto: null, blocked: true });
+        }
+
+        // Verificar finish_reason
+        const finishReason = candidates[0]?.finishReason || '';
+        if (finishReason === 'SAFETY') {
+            console.warn(`Gemini ${tipo}: finishReason=SAFETY`);
+            return res.status(200).json({ texto: null, blocked: true });
         }
 
         const parts = candidates[0]?.content?.parts || [];
@@ -93,7 +110,7 @@ export default async function handler(req, res) {
             return res.status(200).json({ texto: clase });
         }
 
-        console.log(`Gemini dato (${clase}): ${texto.substring(0, 60)}...`);
+        console.log(`Gemini dato (${clase}): ${texto.substring(0, 80)}...`);
         return res.status(200).json({ texto });
 
     } catch (err) {

@@ -1,22 +1,24 @@
 // ============================================================
 // Service Worker — ITGAM WasteAI
+// Versión con cache inteligente: modelos = cache-first, HTML = network-first
 // ============================================================
 
-const CACHE_NAME = 'wasteai-v3';
-const ASSETS = [
-    '/',
-    '/index.html',
+const CACHE_NAME = 'wasteai-v4';
+
+// Solo cachear assets que NO cambian entre deploys
+const ASSETS_ESTATICOS = [
     '/manifest.json'
 ];
 
 self.addEventListener('install', (e) => {
     e.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(ASSETS).catch(() => {
+            return cache.addAll(ASSETS_ESTATICOS).catch(() => {
                 console.log('Algunos assets no se pudieron cachear');
             });
         })
     );
+    // Activar inmediatamente sin esperar a que se cierren tabs viejas
     self.skipWaiting();
 });
 
@@ -38,7 +40,7 @@ self.addEventListener('fetch', (e) => {
 
     const url = new URL(e.request.url);
 
-    // Modelo ONNX — cache first (es grande, no cambia)
+    // Modelos ONNX — cache first (son grandes, nunca cambian)
     if (url.pathname.startsWith('/model/')) {
         e.respondWith(
             caches.match(e.request).then((cached) => {
@@ -53,7 +55,8 @@ self.addEventListener('fetch', (e) => {
         return;
     }
 
-    // Todo lo demás — network first
+    // index.html y todo lo demás — SIEMPRE network first
+    // Si la red falla, usa cache como fallback (PWA offline)
     e.respondWith(
         fetch(e.request)
             .then((res) => {

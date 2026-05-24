@@ -723,7 +723,7 @@ function capturarBase64() {
 }
 
 // ============================================================
-// INFERENCIA ENSEMBLE — corre V1, V2 y V3 en paralelo y pondera
+// INFERENCIA ENSEMBLE — votación ponderada por confianza individual
 // ============================================================
 async function clasificarEnsemble() {
     const tensorNCHW = preprocesar();        // V1 y V2: NCHW + ImageNet norm
@@ -747,38 +747,63 @@ async function clasificarEnsemble() {
     const probsV3raw = softmax(logitsV3raw);
     const probsV3 = CLASES.map(c => probsV3raw[CLASES_V3.indexOf(c)]);
 
-    // Ponderación dinámica según confianza de V1:
-    // V1 alta confianza (≥85%): V1=50%, V2=20%, V3=30%  ← V3 es el más grande (67k imgs)
-    // V1 baja confianza (<85%): V1=34%, V2=33%, V3=33%  ← peso igual entre los tres
-    const maxV1 = Math.max(...probsV1);
-    let w1, w2, w3;
-    if (maxV1 >= 0.85) {
-        w1 = 0.50; w2 = 0.20; w3 = 0.30;
-    } else {
-        w1 = 0.34; w2 = 0.33; w3 = 0.33;
+    // ── Voto de cada modelo ──
+    const confV1 = Math.max(...probsV1);
+    const confV2 = Math.max(...probsV2);
+    const confV3 = Math.max(...probsV3);
+    const v1Clase = CLASES[probsV1.indexOf(confV1)];
+    const v2Clase = CLASES[probsV2.indexOf(confV2)];
+    const v3Clase = CLASES[probsV3.indexOf(confV3)];
+
+    const votos = [
+        { clase: v1Clase, conf: confV1, modelo: 'V1' },
+        { clase: v2Clase, conf: confV2, modelo: 'V2' },
+        { clase: v3Clase, conf: confV3, modelo: 'V3' }
+    ];
+
+    // ── Votación ponderada por confianza ──
+    // Cada modelo "deposita" su confianza como peso en su clase favorita.
+    // Si V1=organico(0.72), V2=organico(0.65), V3=reciclable(0.58):
+    //   organico   = 0.72 + 0.65 = 1.37
+    //   reciclable = 0.58
+    //   → organico gana con confianza = 1.37 / (1.37+0.58) = 70.3%
+    const pesosPorClase = {};
+    CLASES.forEach(c => pesosPorClase[c] = 0);
+    votos.forEach(v => pesosPorClase[v.clase] += v.conf);
+
+    const pesoTotal = Object.values(pesosPorClase).reduce((a, b) => a + b, 0);
+    const claseGanadora = Object.entries(pesosPorClase)
+        .sort((a, b) => b[1] - a[1])[0][0];
+
+    // Confianza normalizada del ganador
+    let confianza = pesosPorClase[claseGanadora] / pesoTotal;
+
+    // ── Bonus de unanimidad / mayoría ──
+    const coincidencias = votos.filter(v => v.clase === claseGanadora).length;
+    if (coincidencias === 3) {
+        // Unanimidad → bonus proporcional a confianza promedio
+        const confPromedio = (confV1 + confV2 + confV3) / 3;
+        confianza = Math.min(0.98, confianza + confPromedio * 0.15);
+    } else if (coincidencias === 2) {
+        // 2 de 3 → pequeño boost
+        confianza = Math.min(0.95, confianza + 0.05);
     }
-
-    const ensemble = probsV1.map((p, i) => w1 * p + w2 * probsV2[i] + w3 * probsV3[i]);
-
-    let maxIdx = 0;
-    for (let i = 1; i < ensemble.length; i++) {
-        if (ensemble[i] > ensemble[maxIdx]) maxIdx = i;
-    }
-
-    const v1Clase = CLASES[probsV1.indexOf(Math.max(...probsV1))];
-    const v2Clase = CLASES[probsV2.indexOf(Math.max(...probsV2))];
-    const v3Clase = CLASES[probsV3.indexOf(Math.max(...probsV3))];
+    // Si ninguno coincide (3 clases distintas) → la confianza ya es baja naturalmente
 
     return {
-        clase:     CLASES[maxIdx],
-        confianza: ensemble[maxIdx],
-        todas:     Object.fromEntries(CLASES.map((c, i) => [c, ensemble[i]])),
+        clase:     claseGanadora,
+        confianza: confianza,
+        todas:     Object.fromEntries(CLASES.map(c => [c, pesosPorClase[c] / pesoTotal])),
         v1_clase:  v1Clase,
         v2_clase:  v2Clase,
         v3_clase:  v3Clase,
-        v1_conf:   maxV1,
-        // Cuántos modelos coinciden con el resultado final
-        coincidencias: [v1Clase, v2Clase, v3Clase].filter(c => c === CLASES[maxIdx]).length
+        v1_conf:   confV1,
+        v2_conf:   confV2,
+        v3_conf:   confV3,
+        coincidencias: coincidencias,
+        // Info para el árbitro local
+        modelosDiscrepan: coincidencias < 3,
+        confMinima: Math.min(confV1, confV2, confV3)
     };
 }
 
@@ -789,7 +814,7 @@ async function clasificarGemini(base64) {
     if (!base64 || base64.length < 100) return null;
     try {
         const ctrl    = new AbortController();
-        const timeout = setTimeout(() => ctrl.abort(), 30000);
+        const timeout = setTimeout(() => ctrl.abort(), 15000);
         const res     = await fetch('/api/gemini', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -856,39 +881,68 @@ async function clasificar() {
         $btnClasif.textContent = 'CLASIFICAR';
         analizando = false;
 
-        // Dato curioso — independiente, no bloquea nada
-        obtenerDato(resEnsemble.clase).then(dato => {
-            if (dato && $resOverlay.classList.contains('visible')) {
-                $resDato.textContent = dato;
-            }
-        }).catch(() => {});
+        // ── ÁRBITRO LOCAL — decide si llamar a Gemini ──
+        const necesitaGemini = resEnsemble.modelosDiscrepan && resEnsemble.confianza < 0.70;
 
-        // Gemini vision — independiente del dato curioso
-        // Actualiza badge en cuanto responde, sin esperar al dato
-        clasificarGemini(base64).then(claseGemini => {
-            if (!claseGemini) return; // Gemini no disponible o safety filter
-            if (!$resOverlay.classList.contains('visible')) return; // usuario ya escaneó otra cosa
+        if (necesitaGemini) {
+            // Indicador visual: Gemini está procesando
+            $resDato.textContent = '⟳ IA verificando clasificación...';
+            $resDato.style.opacity = '0.6';
 
-            if (claseGemini === resEnsemble.clase) {
-                // Coinciden → subir badge
-                $resBadge.textContent = '✓ ALTA CONFIANZA · ENSEMBLE + IA';
-                $resBadge.className   = 'badge badge-alta';
-            } else if (resEnsemble.confianza < 0.80) {
-                // Confianza baja y Gemini difiere → corregir
-                $resClase.textContent = NOMBRES[claseGemini] || claseGemini.toUpperCase();
-                $resClase.style.color = COLORES[claseGemini] || '#fff';
-                $resBadge.textContent = '⚡ GEMINI CORRIGE ENSEMBLE';
-                $resBadge.className   = 'badge badge-gemini';
-                activarContenedor(claseGemini);
-                // Reemplazar dato curioso con la clase corregida
-                obtenerDato(claseGemini).then(d => {
-                    if (d && $resOverlay.classList.contains('visible')) $resDato.textContent = d;
+            // Gemini vision — solo cuando hay duda real
+            clasificarGemini(base64).then(claseGemini => {
+                $resDato.style.opacity = '1';
+
+                if (!claseGemini) {
+                    // Gemini no disponible — indicar que se quedó con ensemble
+                    $resDato.textContent = '';
+                    // Pedir dato curioso con la clase del ensemble
+                    obtenerDato(resEnsemble.clase).then(dato => {
+                        if (dato && $resOverlay.classList.contains('visible')) {
+                            $resDato.textContent = dato;
+                        }
+                    }).catch(() => {});
+                    return;
+                }
+
+                if (!$resOverlay.classList.contains('visible')) return;
+
+                if (claseGemini === resEnsemble.clase) {
+                    // Gemini confirma → alta confianza
+                    $resBadge.textContent = '✓ ALTA CONFIANZA · ENSEMBLE + IA';
+                    $resBadge.className   = 'badge badge-alta';
+                } else {
+                    // Gemini difiere y el ensemble tenía duda → corregir
+                    $resClase.textContent = NOMBRES[claseGemini] || claseGemini.toUpperCase();
+                    $resClase.style.color = COLORES[claseGemini] || '#fff';
+                    $resBadge.textContent = '⚡ GEMINI CORRIGE ENSEMBLE';
+                    $resBadge.className   = 'badge badge-gemini';
+                    activarContenedor(claseGemini);
+                }
+
+                // Dato curioso con la clase definitiva
+                const claseParaDato = claseGemini === resEnsemble.clase ? resEnsemble.clase : claseGemini;
+                obtenerDato(claseParaDato).then(dato => {
+                    if (dato && $resOverlay.classList.contains('visible')) {
+                        $resDato.textContent = dato;
+                    }
                 }).catch(() => {});
-            }
-            // confianza >= 0.80 y Gemini difiere → mantener ensemble, no tocar nada
-        }).catch(() => {});
 
-        return; // unlock ya fue arriba
+            }).catch(() => {
+                $resDato.style.opacity = '1';
+                $resDato.textContent = '';
+            });
+        } else {
+            // Ensemble tiene confianza suficiente o todos coinciden → no llamar a Gemini
+            // Solo pedir dato curioso
+            obtenerDato(resEnsemble.clase).then(dato => {
+                if (dato && $resOverlay.classList.contains('visible')) {
+                    $resDato.textContent = dato;
+                }
+            }).catch(() => {});
+        }
+
+        return;
 
     } catch (err) {
         console.error('Error al clasificar:', err);
@@ -908,10 +962,9 @@ function mostrarResultado(clase, confianza, modo, resEnsemble) {
     $resClase.style.color = COLORES[clase] || '#fff';
     $resConf.textContent  = (confianza * 100).toFixed(1) + '%';
     $resDato.textContent  = '';
+    $resDato.style.opacity = '1';
 
-    // V1, V2 y V3 coinciden entre sí
-    const todosCoinciden = resEnsemble.coincidencias === 3;
-    const dosCoinciden   = resEnsemble.coincidencias === 2;
+    const coincidencias = resEnsemble.coincidencias;
 
     switch (modo) {
         case 'alta-confianza':
@@ -923,15 +976,18 @@ function mostrarResultado(clase, confianza, modo, resEnsemble) {
             $resBadge.className   = 'badge badge-gemini';
             break;
         default: // 'ensemble'
-            if (todosCoinciden) {
-                $resBadge.textContent = '◈ ENSEMBLE V1+V2+V3 COINCIDEN';
+            if (coincidencias === 3 && confianza >= 0.70) {
+                $resBadge.textContent = '◈ UNANIMIDAD V1+V2+V3';
+                $resBadge.className   = 'badge badge-alta';
+            } else if (coincidencias === 3) {
+                $resBadge.textContent = '◈ V1+V2+V3 COINCIDEN';
                 $resBadge.className   = 'badge badge-ensemble';
-            } else if (dosCoinciden) {
-                $resBadge.textContent = '◈ ENSEMBLE V1+V2+V3 (2/3)';
+            } else if (coincidencias === 2) {
+                $resBadge.textContent = '◈ MAYORÍA 2/3';
                 $resBadge.className   = 'badge badge-ensemble';
             } else {
-                $resBadge.textContent = '◈ ENSEMBLE V1+V2+V3';
-                $resBadge.className   = 'badge badge-ensemble';
+                $resBadge.textContent = '◈ ENSEMBLE (SIN CONSENSO)';
+                $resBadge.className   = 'badge badge-local';
             }
     }
 
@@ -992,7 +1048,8 @@ inicializar();
 
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').catch(() => {});
+        // Forzar que el SW se actualice en cada visita (no cachear sw.js)
+        navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
     });
 }
 </script>
