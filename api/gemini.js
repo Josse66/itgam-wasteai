@@ -18,7 +18,7 @@ let currentKeyIndex = 0;
 
 function getGeminiURL(keyIndex) {
     const key = GEMINI_KEYS[keyIndex % GEMINI_KEYS.length];
-    return `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=${key}`;
+    return `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${key}`;
 }
 
 async function fetchConRotacion(payload, t0) {
