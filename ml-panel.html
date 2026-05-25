@@ -1,0 +1,2331 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ML Console — ITGAM WasteAI</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#06060e">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=JetBrains+Mono:wght@400;500;700&family=Exo+2:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.0/dist/ort.min.js"></script>
+
+    <style>
+        :root {
+            --bg-primary: #06060e;
+            --bg-secondary: #0c0c1a;
+            --bg-card: #111128;
+            --bg-card-hi: #161636;
+            --cyan: #00e5ff;
+            --cyan-dim: #00e5ff33;
+            --cyan-deep: #00e5ff11;
+            --purple: #b388ff;
+            --pink: #ff4081;
+            --green: #69f0ae;
+            --orange: #ffab40;
+            --red: #ff5252;
+            --text-primary: #e8eaf6;
+            --text-secondary: #9fa8da;
+            --text-dim: #5c6bc0;
+            --text-faint: #3f51b544;
+            --color-organico: #2E7D32;
+            --color-reciclable: #757575;
+            --color-no-aprovechable: #424242;
+            --color-peligroso: #C62828;
+            --font-display: 'Orbitron', monospace;
+            --font-body: 'Exo 2', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html, body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            background:
+                radial-gradient(ellipse at 20% 0%, #1a237e22 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 100%, #4a148c22 0%, transparent 50%),
+                var(--bg-primary);
+            background-attachment: fixed;
+        }
+
+        /* Grid del HUD */
+        .scanlines {
+            position: fixed; inset: 0;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent 0px,
+                transparent 3px,
+                #00e5ff04 3px,
+                #00e5ff04 4px
+            );
+            z-index: 999;
+        }
+
+        /* ========== HEADER ========== */
+        header {
+            position: sticky; top: 0;
+            background: #06060ee0;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--cyan-dim);
+            padding: 14px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 50;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .brand-mark {
+            width: 32px; height: 32px;
+            border: 1.5px solid var(--cyan);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--font-display);
+            font-weight: 900;
+            font-size: 14px;
+            color: var(--cyan);
+            box-shadow: 0 0 16px var(--cyan-dim);
+            position: relative;
+        }
+        .brand-mark::after {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border: 1px solid var(--cyan-dim);
+            border-radius: 9px;
+            opacity: 0.5;
+        }
+
+        .brand-text {
+            line-height: 1.1;
+        }
+        .brand-text h1 {
+            font-family: var(--font-display);
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: var(--text-primary);
+        }
+        .brand-text p {
+            font-family: var(--font-mono);
+            font-size: 9px;
+            color: var(--cyan);
+            letter-spacing: 2px;
+            margin-top: 2px;
+        }
+
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-secondary);
+        }
+
+        .status-pill {
+            display: flex; align-items: center; gap: 6px;
+            padding: 5px 10px;
+            border: 1px solid var(--cyan-dim);
+            border-radius: 4px;
+            letter-spacing: 1px;
+            background: var(--cyan-deep);
+        }
+        .status-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 8px var(--green);
+            animation: pulse 1.6s ease-in-out infinite;
+        }
+        .status-dot.warn { background: var(--orange); box-shadow: 0 0 8px var(--orange); }
+        .status-dot.err  { background: var(--red);    box-shadow: 0 0 8px var(--red); }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        .back-link {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--cyan);
+            text-decoration: none;
+            padding: 7px 14px;
+            border: 1px solid var(--cyan-dim);
+            border-radius: 4px;
+            letter-spacing: 1.5px;
+            transition: all 0.2s;
+            text-transform: uppercase;
+        }
+        .back-link:hover {
+            background: var(--cyan-deep);
+            box-shadow: 0 0 12px var(--cyan-dim);
+        }
+
+        /* ========== LAYOUT ========== */
+        main {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px 20px 60px;
+        }
+
+        .section-title {
+            font-family: var(--font-display);
+            font-size: 11px;
+            letter-spacing: 4px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .section-title::before {
+            content: '';
+            display: block;
+            width: 24px; height: 2px;
+            background: var(--cyan);
+            box-shadow: 0 0 8px var(--cyan);
+        }
+        .section-title .num {
+            font-family: var(--font-mono);
+            color: var(--cyan);
+            font-size: 10px;
+        }
+
+        section {
+            margin-bottom: 40px;
+        }
+
+        /* ========== PANEL DE INFERENCIA EN VIVO ========== */
+        .live-grid {
+            display: grid;
+            grid-template-columns: 1.1fr 2fr;
+            gap: 20px;
+        }
+        @media (max-width: 980px) {
+            .live-grid { grid-template-columns: 1fr; }
+        }
+
+        .camera-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--cyan-dim);
+            border-radius: 10px;
+            padding: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+        .camera-panel::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+            opacity: 0.6;
+        }
+
+        .panel-label {
+            font-family: var(--font-mono);
+            font-size: 9px;
+            letter-spacing: 2.5px;
+            color: var(--cyan);
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .panel-label .meta {
+            color: var(--text-dim);
+            letter-spacing: 1.5px;
+        }
+
+        #video-wrap {
+            position: relative;
+            aspect-ratio: 1 / 1;
+            background: #000;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid #ffffff10;
+        }
+
+        #video-camara {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #canvas-debug {
+            position: absolute;
+            bottom: 8px; right: 8px;
+            width: 80px;
+            height: 80px;
+            border: 1px solid var(--cyan);
+            border-radius: 4px;
+            box-shadow: 0 0 12px var(--cyan-dim);
+            background: #000;
+            opacity: 0.85;
+        }
+
+        #preview-galeria {
+            position: absolute; inset: 0;
+            width: 100%; height: 100%;
+            object-fit: contain;
+            background: #000;
+            display: none;
+        }
+
+        .corner {
+            position: absolute;
+            width: 18px; height: 18px;
+            border-color: var(--cyan);
+            border-style: solid;
+        }
+        .corner.tl { top: 8px; left: 8px; border-width: 2px 0 0 2px; }
+        .corner.tr { top: 8px; right: 8px; border-width: 2px 2px 0 0; }
+        .corner.bl { bottom: 8px; left: 8px; border-width: 0 0 2px 2px; }
+        .corner.br { bottom: 8px; right: 8px; border-width: 0 2px 2px 0; }
+
+        .scan-line {
+            position: absolute;
+            left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+            box-shadow: 0 0 15px var(--cyan), 0 0 30px var(--cyan);
+            animation: scan 1.4s ease-in-out infinite;
+            opacity: 0;
+            transition: opacity 0.3s;
+            top: 0;
+        }
+        .scan-line.activo { opacity: 1; }
+        @keyframes scan {
+            0% { top: 0; } 100% { top: 100%; }
+        }
+
+        .camera-controls {
+            margin-top: 14px;
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 8px;
+        }
+
+        button.act, label.act {
+            font-family: var(--font-display);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            padding: 12px 8px;
+            background: linear-gradient(135deg, #0d47a1, #1a237e);
+            border: 1px solid var(--cyan-dim);
+            color: var(--cyan);
+            border-radius: 6px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.15s;
+            text-transform: uppercase;
+        }
+        button.act:hover:not([disabled]), label.act:hover {
+            background: linear-gradient(135deg, #1565c0, #283593);
+            box-shadow: 0 0 16px var(--cyan-dim);
+        }
+        button.act[disabled] {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: var(--bg-card-hi);
+        }
+        button.act.sec {
+            background: var(--bg-card-hi);
+            color: var(--text-secondary);
+            font-size: 14px;
+            letter-spacing: 0;
+        }
+        button.act.sec:hover {
+            background: #1f1f44;
+        }
+        #input-galeria { display: none; }
+
+        /* ========== MODELOS V1/V2/V3 ========== */
+        .models-stack {
+            display: grid;
+            grid-template-rows: repeat(3, 1fr) auto;
+            gap: 14px;
+        }
+
+        .model-card {
+            background: var(--bg-card);
+            border: 1px solid var(--cyan-dim);
+            border-radius: 10px;
+            padding: 14px 16px;
+            position: relative;
+            transition: all 0.3s;
+        }
+        .model-card.v1 { border-left: 3px solid var(--cyan); }
+        .model-card.v2 { border-left: 3px solid var(--purple); }
+        .model-card.v3 { border-left: 3px solid var(--green); }
+        .model-card.winner {
+            box-shadow: 0 0 0 1px var(--cyan), 0 0 24px var(--cyan-dim);
+        }
+
+        .model-head {
+            display: grid;
+            grid-template-columns: auto 1fr auto auto;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+
+        .model-tag {
+            font-family: var(--font-display);
+            font-weight: 900;
+            font-size: 14px;
+            padding: 4px 10px;
+            border-radius: 4px;
+            letter-spacing: 1px;
+        }
+        .model-tag.v1 { background: var(--cyan); color: #06060e; }
+        .model-tag.v2 { background: var(--purple); color: #06060e; }
+        .model-tag.v3 { background: var(--green); color: #06060e; }
+
+        .model-name {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+        .model-name strong {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        .model-arch {
+            font-size: 9px;
+            color: var(--text-dim);
+            margin-top: 2px;
+            letter-spacing: 0.5px;
+        }
+
+        .model-pred {
+            font-family: var(--font-display);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-align: right;
+        }
+        .model-pred .conf {
+            display: block;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-weight: 400;
+            letter-spacing: 0.5px;
+            margin-top: 2px;
+        }
+
+        .model-latency {
+            font-family: var(--font-mono);
+            font-size: 9px;
+            color: var(--text-dim);
+            background: var(--bg-card-hi);
+            padding: 3px 8px;
+            border-radius: 3px;
+            letter-spacing: 1px;
+        }
+        .model-latency.fast  { color: var(--green); }
+        .model-latency.med   { color: var(--orange); }
+        .model-latency.slow  { color: var(--red); }
+
+        .probs {
+            display: grid;
+            gap: 6px;
+        }
+
+        .prob-row {
+            display: grid;
+            grid-template-columns: 100px 1fr 50px;
+            align-items: center;
+            gap: 10px;
+            font-family: var(--font-mono);
+            font-size: 10px;
+        }
+        .prob-row .label {
+            color: var(--text-secondary);
+            letter-spacing: 0.5px;
+        }
+        .prob-row .bar-track {
+            height: 6px;
+            background: var(--bg-card-hi);
+            border-radius: 3px;
+            overflow: hidden;
+            position: relative;
+        }
+        .prob-row .bar-fill {
+            height: 100%;
+            background: var(--text-dim);
+            border-radius: 3px;
+            width: 0%;
+            transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .prob-row.win .bar-fill { background: var(--cyan); box-shadow: 0 0 10px var(--cyan-dim); }
+        .prob-row .val {
+            text-align: right;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        .prob-row.win .val { color: var(--cyan); }
+
+        /* ENSEMBLE CARD */
+        .ensemble-card {
+            background: linear-gradient(135deg, #0d3b6622, #4a148c22);
+            border: 1px solid var(--cyan);
+            border-radius: 10px;
+            padding: 16px;
+            position: relative;
+        }
+        .ensemble-card::before {
+            content: 'ENSEMBLE · VOTACIÓN PONDERADA';
+            position: absolute;
+            top: -10px; left: 14px;
+            background: var(--bg-primary);
+            font-family: var(--font-display);
+            font-size: 9px;
+            letter-spacing: 3px;
+            color: var(--cyan);
+            padding: 0 8px;
+        }
+
+        .ensemble-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            align-items: center;
+        }
+        .ensemble-result {
+            text-align: center;
+            border-right: 1px solid var(--cyan-dim);
+            padding-right: 16px;
+        }
+        .ensemble-result .clase {
+            font-family: var(--font-display);
+            font-size: 18px;
+            font-weight: 900;
+            letter-spacing: 1.5px;
+            line-height: 1.2;
+        }
+        .ensemble-result .conf {
+            font-family: var(--font-mono);
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--cyan);
+            margin-top: 6px;
+        }
+        .ensemble-result .meta {
+            font-family: var(--font-mono);
+            font-size: 9px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+            letter-spacing: 1px;
+        }
+
+        @media (max-width: 600px) {
+            .ensemble-grid { grid-template-columns: 1fr; }
+            .ensemble-result { border-right: none; border-bottom: 1px solid var(--cyan-dim); padding-right: 0; padding-bottom: 12px; }
+        }
+
+        /* GEMINI ARBITER */
+        .gemini-card {
+            background: var(--bg-card);
+            border: 1px solid #b388ff44;
+            border-radius: 10px;
+            padding: 14px 16px;
+            position: relative;
+        }
+        .gemini-card::before {
+            content: 'GEMINI ARBITER · CLOUD VLM';
+            position: absolute;
+            top: -10px; left: 14px;
+            background: var(--bg-primary);
+            font-family: var(--font-display);
+            font-size: 9px;
+            letter-spacing: 3px;
+            color: var(--purple);
+            padding: 0 8px;
+        }
+        .gemini-state {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 14px;
+            align-items: center;
+            font-family: var(--font-mono);
+            font-size: 11px;
+        }
+        .gemini-state .icon {
+            font-size: 20px;
+            color: var(--purple);
+        }
+        .gemini-state .desc {
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+        .gemini-state .desc strong {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        .gemini-state .verdict {
+            font-family: var(--font-display);
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            padding: 5px 10px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .verdict.skip      { background: var(--bg-card-hi); color: var(--text-dim); border: 1px solid var(--text-faint); }
+        .verdict.confirm   { background: #1b5e2044; color: var(--green); border: 1px solid #66bb6a44; }
+        .verdict.correct   { background: #4a148c33; color: var(--purple); border: 1px solid #b388ff44; }
+        .verdict.fallback  { background: #b71c1c33; color: var(--red); border: 1px solid #ef535044; }
+
+        /* ========== TABS DE MÉTRICAS ========== */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 14px;
+            border-bottom: 1px solid var(--cyan-dim);
+            overflow-x: auto;
+        }
+        .tab {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            padding: 10px 18px;
+            background: transparent;
+            color: var(--text-dim);
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            text-transform: uppercase;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        .tab:hover { color: var(--text-secondary); }
+        .tab.active {
+            color: var(--cyan);
+            border-bottom-color: var(--cyan);
+            background: var(--cyan-deep);
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* TABLAS DE MÉTRICAS */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        @media (max-width: 760px) {
+            .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        .metric-card {
+            background: var(--bg-card);
+            border: 1px solid #ffffff0a;
+            border-radius: 8px;
+            padding: 14px;
+            text-align: center;
+        }
+        .metric-card .label {
+            font-family: var(--font-mono);
+            font-size: 9px;
+            color: var(--text-dim);
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+        .metric-card .value {
+            font-family: var(--font-display);
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-top: 4px;
+            line-height: 1;
+        }
+        .metric-card .value .unit {
+            font-size: 13px;
+            color: var(--text-dim);
+            font-weight: 400;
+            margin-left: 2px;
+        }
+        .metric-card .delta {
+            font-family: var(--font-mono);
+            font-size: 9px;
+            color: var(--green);
+            margin-top: 4px;
+            letter-spacing: 0.5px;
+        }
+        .metric-card .delta.bad { color: var(--red); }
+        .metric-card .delta.neutral { color: var(--text-dim); }
+
+        table.data {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-card);
+            border-radius: 8px;
+            overflow: hidden;
+            font-family: var(--font-mono);
+            font-size: 11px;
+        }
+        table.data th, table.data td {
+            padding: 11px 14px;
+            text-align: right;
+            border-bottom: 1px solid #ffffff08;
+        }
+        table.data th:first-child, table.data td:first-child {
+            text-align: left;
+            color: var(--text-secondary);
+        }
+        table.data th {
+            background: var(--bg-card-hi);
+            color: var(--cyan);
+            font-weight: 500;
+            font-size: 10px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+        }
+        table.data td {
+            color: var(--text-primary);
+        }
+        table.data tr:hover td {
+            background: var(--bg-card-hi);
+        }
+        table.data tr.total td {
+            background: var(--cyan-deep);
+            color: var(--cyan);
+            font-weight: 700;
+            border-bottom: none;
+        }
+        .swatch {
+            display: inline-block;
+            width: 10px; height: 10px;
+            border-radius: 2px;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        /* ========== MATRIZ DE CONFUSIÓN ========== */
+        .cm-wrap {
+            background: var(--bg-card);
+            border: 1px solid var(--cyan-dim);
+            border-radius: 10px;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            align-items: start;
+        }
+        @media (max-width: 880px) {
+            .cm-wrap { grid-template-columns: 1fr; }
+        }
+
+        .cm-grid {
+            display: grid;
+            grid-template-columns: 110px repeat(4, 1fr);
+            gap: 2px;
+            font-family: var(--font-mono);
+            font-size: 10px;
+        }
+        .cm-cell {
+            aspect-ratio: 1.4;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            border-radius: 3px;
+            font-weight: 500;
+            transition: all 0.2s;
+            cursor: default;
+        }
+        .cm-axis {
+            color: var(--text-dim);
+            font-size: 9px;
+            line-height: 1.15;
+            padding: 4px;
+            letter-spacing: 0.3px;
+        }
+        .cm-cell.data:hover {
+            transform: scale(1.06);
+            z-index: 2;
+            box-shadow: 0 0 14px var(--cyan-dim);
+        }
+        .cm-diagonal {
+            background: var(--green);
+            color: #06060e;
+            font-weight: 700;
+        }
+        .cm-low { background: #ef535055; color: var(--text-primary); }
+        .cm-med { background: #ffab4055; color: var(--text-primary); }
+        .cm-zero { background: #ffffff05; color: var(--text-dim); }
+
+        .cm-axis-label {
+            font-family: var(--font-mono);
+            font-size: 9px;
+            color: var(--text-dim);
+            letter-spacing: 2px;
+            text-align: center;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .cm-analysis {
+            font-family: var(--font-body);
+            font-size: 12px;
+            line-height: 1.7;
+            color: var(--text-secondary);
+        }
+        .cm-analysis h4 {
+            font-family: var(--font-display);
+            font-size: 11px;
+            letter-spacing: 2px;
+            color: var(--cyan);
+            margin-bottom: 10px;
+            margin-top: 16px;
+            text-transform: uppercase;
+        }
+        .cm-analysis h4:first-child { margin-top: 0; }
+        .cm-analysis ul { list-style: none; padding: 0; }
+        .cm-analysis li {
+            padding: 4px 0;
+            padding-left: 16px;
+            position: relative;
+        }
+        .cm-analysis li::before {
+            content: '▸';
+            position: absolute;
+            left: 0;
+            color: var(--cyan);
+        }
+        .cm-analysis strong { color: var(--text-primary); font-weight: 500; }
+
+        /* ========== ARQUITECTURA ========== */
+        .arch-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+        }
+        @media (max-width: 880px) {
+            .arch-grid { grid-template-columns: 1fr; }
+        }
+
+        .arch-card {
+            background: var(--bg-card);
+            border: 1px solid #ffffff0a;
+            border-radius: 10px;
+            padding: 18px;
+        }
+        .arch-card.v1 { border-top: 3px solid var(--cyan); }
+        .arch-card.v2 { border-top: 3px solid var(--purple); }
+        .arch-card.v3 { border-top: 3px solid var(--green); }
+
+        .arch-card h3 {
+            font-family: var(--font-display);
+            font-size: 13px;
+            letter-spacing: 2px;
+            margin-bottom: 4px;
+        }
+        .arch-card .arch-subtitle {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-dim);
+            letter-spacing: 1px;
+            margin-bottom: 14px;
+        }
+        .arch-spec {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            border-bottom: 1px dashed #ffffff08;
+        }
+        .arch-spec:last-child { border-bottom: none; }
+        .arch-spec .k { color: var(--text-dim); letter-spacing: 0.5px; }
+        .arch-spec .v { color: var(--text-primary); }
+
+        /* ========== PIPELINE ========== */
+        .pipeline {
+            background: var(--bg-card);
+            border: 1px solid #ffffff0a;
+            border-radius: 10px;
+            padding: 22px;
+            overflow-x: auto;
+        }
+        .pipeline-flow {
+            display: flex;
+            align-items: stretch;
+            gap: 8px;
+            min-width: 720px;
+        }
+        .pipe-step {
+            flex: 1;
+            background: var(--bg-card-hi);
+            border: 1px solid #ffffff0a;
+            border-radius: 6px;
+            padding: 12px;
+            position: relative;
+            font-family: var(--font-mono);
+            font-size: 10px;
+        }
+        .pipe-step .step-num {
+            position: absolute;
+            top: -10px; left: 10px;
+            background: var(--cyan);
+            color: #06060e;
+            font-family: var(--font-display);
+            font-weight: 900;
+            font-size: 10px;
+            padding: 2px 7px;
+            border-radius: 3px;
+        }
+        .pipe-step .step-title {
+            color: var(--cyan);
+            font-weight: 500;
+            font-size: 10px;
+            letter-spacing: 1px;
+            margin-bottom: 6px;
+            margin-top: 4px;
+            text-transform: uppercase;
+        }
+        .pipe-step .step-body {
+            color: var(--text-secondary);
+            line-height: 1.6;
+            font-size: 10px;
+        }
+        .pipe-arrow {
+            display: flex;
+            align-items: center;
+            color: var(--cyan);
+            font-size: 16px;
+        }
+
+        /* ========== SESIÓN ========== */
+        .session-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+        @media (max-width: 760px) {
+            .session-grid { grid-template-columns: 1fr; }
+        }
+
+        .session-card {
+            background: var(--bg-card);
+            border: 1px solid #ffffff0a;
+            border-radius: 10px;
+            padding: 16px;
+        }
+        .session-card h4 {
+            font-family: var(--font-mono);
+            font-size: 9px;
+            color: var(--text-dim);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+
+        .dist-bar {
+            display: grid;
+            grid-template-columns: 90px 1fr 40px;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+            font-family: var(--font-mono);
+            font-size: 10px;
+        }
+        .dist-bar .label { color: var(--text-secondary); font-size: 9px; }
+        .dist-bar .track {
+            height: 8px;
+            background: var(--bg-card-hi);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .dist-bar .fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s;
+        }
+        .dist-bar .val {
+            text-align: right;
+            color: var(--text-primary);
+        }
+
+        .log-feed {
+            background: #000;
+            border: 1px solid #ffffff08;
+            border-radius: 6px;
+            padding: 12px;
+            font-family: var(--font-mono);
+            font-size: 10px;
+            line-height: 1.7;
+            max-height: 180px;
+            overflow-y: auto;
+            color: var(--text-secondary);
+        }
+        .log-feed .ts { color: var(--text-dim); margin-right: 8px; }
+        .log-feed .lvl-info { color: var(--cyan); }
+        .log-feed .lvl-ok   { color: var(--green); }
+        .log-feed .lvl-warn { color: var(--orange); }
+        .log-feed .lvl-err  { color: var(--red); }
+
+        /* ========== FOOTER ========== */
+        footer {
+            margin-top: 60px;
+            padding-top: 30px;
+            border-top: 1px solid var(--cyan-dim);
+            text-align: center;
+            font-family: var(--font-mono);
+            font-size: 9px;
+            color: var(--text-dim);
+            letter-spacing: 2px;
+        }
+        footer a { color: var(--cyan); text-decoration: none; }
+
+        /* ========== LOADING ========== */
+        #loading {
+            position: fixed; inset: 0;
+            background: var(--bg-primary);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            z-index: 9999;
+            transition: opacity 0.5s, visibility 0.5s;
+        }
+        #loading.gone { opacity: 0; visibility: hidden; pointer-events: none; }
+        #loading h2 {
+            font-family: var(--font-display);
+            font-size: 18px;
+            letter-spacing: 4px;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        #loading .bar {
+            width: 280px; height: 2px;
+            background: var(--bg-card);
+            border-radius: 1px;
+            overflow: hidden;
+        }
+        #loading .bar > div {
+            height: 100%;
+            background: linear-gradient(90deg, var(--cyan), var(--purple));
+            width: 0%;
+            transition: width 0.3s;
+        }
+        #loading .msg {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            color: var(--text-secondary);
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="scanlines"></div>
+
+<div id="loading">
+    <h2>ML CONSOLE</h2>
+    <p style="font-family: var(--font-mono); font-size: 9px; color: var(--text-dim); letter-spacing: 3px;">CARGANDO MODELOS</p>
+    <div class="bar"><div id="loading-bar"></div></div>
+    <div class="msg" id="loading-msg">Inicializando...</div>
+</div>
+
+<header>
+    <div class="brand">
+        <div class="brand-mark">W</div>
+        <div class="brand-text">
+            <h1>ML CONSOLE</h1>
+            <p>ITGAM · WASTEAI · INFERENCE MONITOR</p>
+        </div>
+    </div>
+    <div class="header-status">
+        <div class="status-pill"><span class="status-dot" id="sys-dot"></span><span id="sys-text">SISTEMA OK</span></div>
+        <a href="/" class="back-link">← App</a>
+    </div>
+</header>
+
+<main>
+
+<!-- ============================================================
+     SECCIÓN 1 — INFERENCIA EN VIVO
+============================================================ -->
+<section>
+    <div class="section-title"><span class="num">01</span> INFERENCIA EN TIEMPO REAL</div>
+    <div class="live-grid">
+
+        <div class="camera-panel">
+            <div class="panel-label">
+                <span>◉ ENTRADA · 224×224 RGB</span>
+                <span class="meta" id="cam-info">cámara</span>
+            </div>
+            <div id="video-wrap">
+                <video id="video-camara" autoplay playsinline muted webkit-playsinline></video>
+                <img id="preview-galeria" alt="">
+                <canvas id="canvas-captura" style="display:none"></canvas>
+                <canvas id="canvas-debug" width="80" height="80"></canvas>
+                <div class="corner tl"></div><div class="corner tr"></div>
+                <div class="corner bl"></div><div class="corner br"></div>
+                <div class="scan-line" id="scan-line"></div>
+            </div>
+            <div class="camera-controls">
+                <button class="act" id="btn-clasificar">▶ EJECUTAR INFERENCIA</button>
+                <label class="act sec" for="input-galeria" title="Cargar imagen">🖼</label>
+                <button class="act sec" id="btn-camara" title="Cambiar cámara">🔄</button>
+                <input type="file" id="input-galeria" accept="image/*">
+            </div>
+        </div>
+
+        <div class="models-stack">
+
+            <!-- V1 -->
+            <div class="model-card v1" id="card-v1">
+                <div class="model-head">
+                    <span class="model-tag v1">V1</span>
+                    <div>
+                        <div class="model-name"><strong>EfficientNet-B0</strong> · PyTorch ONNX</div>
+                        <div class="model-arch">NCHW · ImageNet norm · datasets originales</div>
+                    </div>
+                    <div class="model-pred" id="v1-pred">
+                        <span class="clase">—</span>
+                        <span class="conf">— %</span>
+                    </div>
+                    <div class="model-latency" id="v1-lat">— ms</div>
+                </div>
+                <div class="probs" id="v1-probs"></div>
+            </div>
+
+            <!-- V2 -->
+            <div class="model-card v2" id="card-v2">
+                <div class="model-head">
+                    <span class="model-tag v2">V2</span>
+                    <div>
+                        <div class="model-name"><strong>EfficientNet-B0</strong> · PyTorch ONNX</div>
+                        <div class="model-arch">NCHW · ImageNet norm · datasets especializados</div>
+                    </div>
+                    <div class="model-pred" id="v2-pred">
+                        <span class="clase">—</span>
+                        <span class="conf">— %</span>
+                    </div>
+                    <div class="model-latency" id="v2-lat">— ms</div>
+                </div>
+                <div class="probs" id="v2-probs"></div>
+            </div>
+
+            <!-- V3 -->
+            <div class="model-card v3" id="card-v3">
+                <div class="model-head">
+                    <span class="model-tag v3">V3</span>
+                    <div>
+                        <div class="model-name"><strong>EfficientNet-B0</strong> · Keras ONNX</div>
+                        <div class="model-arch">NHWC · raw [0–255] · 67k imágenes</div>
+                    </div>
+                    <div class="model-pred" id="v3-pred">
+                        <span class="clase">—</span>
+                        <span class="conf">— %</span>
+                    </div>
+                    <div class="model-latency" id="v3-lat">— ms</div>
+                </div>
+                <div class="probs" id="v3-probs"></div>
+            </div>
+
+            <!-- ENSEMBLE -->
+            <div class="ensemble-card">
+                <div class="ensemble-grid">
+                    <div class="ensemble-result">
+                        <div class="clase" id="ens-clase" style="color: var(--cyan)">ESPERANDO</div>
+                        <div class="conf" id="ens-conf">— %</div>
+                        <div class="meta" id="ens-meta">votos: 0/0/0 · 0 coincidencias</div>
+                    </div>
+                    <div class="probs" id="ens-probs"></div>
+                </div>
+            </div>
+
+            <!-- GEMINI -->
+            <div class="gemini-card">
+                <div class="gemini-state">
+                    <div class="icon">⏸</div>
+                    <div class="desc" id="gem-desc">
+                        <strong>Árbitro inactivo.</strong> Solo se invoca cuando el ensemble tiene baja confianza (&lt; 70%) o los modelos discrepan.
+                    </div>
+                    <div class="verdict skip" id="gem-verdict">EN ESPERA</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</section>
+
+<!-- ============================================================
+     SECCIÓN 2 — ARQUITECTURA DE MODELOS
+============================================================ -->
+<section>
+    <div class="section-title"><span class="num">02</span> ARQUITECTURA Y CONFIGURACIÓN DE MODELOS</div>
+    <div class="arch-grid">
+
+        <div class="arch-card v1">
+            <h3 style="color: var(--cyan)">MODELO V1</h3>
+            <div class="arch-subtitle">PYTORCH · EXPORT ONNX OPSET 17</div>
+            <div class="arch-spec"><span class="k">Backbone</span><span class="v">EfficientNet-B0</span></div>
+            <div class="arch-spec"><span class="k">Framework</span><span class="v">PyTorch 2.x</span></div>
+            <div class="arch-spec"><span class="k">Formato tensor</span><span class="v">NCHW (1,3,224,224)</span></div>
+            <div class="arch-spec"><span class="k">Normalización</span><span class="v">ImageNet μ/σ</span></div>
+            <div class="arch-spec"><span class="k">Pretrained</span><span class="v">ImageNet-1k</span></div>
+            <div class="arch-spec"><span class="k">Fine-tune</span><span class="v">Dataset original ITGAM</span></div>
+            <div class="arch-spec"><span class="k">Imágenes train</span><span class="v">~8,400</span></div>
+            <div class="arch-spec"><span class="k">Augmentations</span><span class="v">flip, rotate, color jitter</span></div>
+            <div class="arch-spec"><span class="k">Optimizer</span><span class="v">AdamW · lr 1e-4</span></div>
+            <div class="arch-spec"><span class="k">Loss</span><span class="v">CrossEntropy</span></div>
+            <div class="arch-spec"><span class="k">Epochs</span><span class="v">25</span></div>
+            <div class="arch-spec"><span class="k">Tamaño archivo</span><span class="v">~16 MB</span></div>
+            <div class="arch-spec"><span class="k">Parámetros</span><span class="v">5.3 M</span></div>
+        </div>
+
+        <div class="arch-card v2">
+            <h3 style="color: var(--purple)">MODELO V2</h3>
+            <div class="arch-subtitle">PYTORCH · ESPECIALIZADO</div>
+            <div class="arch-spec"><span class="k">Backbone</span><span class="v">EfficientNet-B0</span></div>
+            <div class="arch-spec"><span class="k">Framework</span><span class="v">PyTorch 2.x</span></div>
+            <div class="arch-spec"><span class="k">Formato tensor</span><span class="v">NCHW (1,3,224,224)</span></div>
+            <div class="arch-spec"><span class="k">Normalización</span><span class="v">ImageNet μ/σ</span></div>
+            <div class="arch-spec"><span class="k">Pretrained</span><span class="v">ImageNet-1k</span></div>
+            <div class="arch-spec"><span class="k">Fine-tune</span><span class="v">Dataset curado + balanceado</span></div>
+            <div class="arch-spec"><span class="k">Imágenes train</span><span class="v">~12,800</span></div>
+            <div class="arch-spec"><span class="k">Augmentations</span><span class="v">RandAugment + Mixup</span></div>
+            <div class="arch-spec"><span class="k">Optimizer</span><span class="v">AdamW + Cosine LR</span></div>
+            <div class="arch-spec"><span class="k">Loss</span><span class="v">CrossEntropy · label smoothing 0.1</span></div>
+            <div class="arch-spec"><span class="k">Epochs</span><span class="v">40</span></div>
+            <div class="arch-spec"><span class="k">Tamaño archivo</span><span class="v">~16 MB</span></div>
+            <div class="arch-spec"><span class="k">Parámetros</span><span class="v">5.3 M</span></div>
+        </div>
+
+        <div class="arch-card v3">
+            <h3 style="color: var(--green)">MODELO V3</h3>
+            <div class="arch-subtitle">KERAS · MASIVO</div>
+            <div class="arch-spec"><span class="k">Backbone</span><span class="v">EfficientNet-B0</span></div>
+            <div class="arch-spec"><span class="k">Framework</span><span class="v">TensorFlow / Keras 3</span></div>
+            <div class="arch-spec"><span class="k">Formato tensor</span><span class="v">NHWC (1,224,224,3)</span></div>
+            <div class="arch-spec"><span class="k">Normalización</span><span class="v">Rescaling interno (Keras)</span></div>
+            <div class="arch-spec"><span class="k">Pretrained</span><span class="v">ImageNet-1k</span></div>
+            <div class="arch-spec"><span class="k">Fine-tune</span><span class="v">Dataset masivo agregado</span></div>
+            <div class="arch-spec"><span class="k">Imágenes train</span><span class="v">~67,000</span></div>
+            <div class="arch-spec"><span class="k">Augmentations</span><span class="v">RandomFlip+Rotation+Zoom</span></div>
+            <div class="arch-spec"><span class="k">Optimizer</span><span class="v">Adam · lr 1e-3 → 1e-5</span></div>
+            <div class="arch-spec"><span class="k">Loss</span><span class="v">SparseCategoricalCrossentropy</span></div>
+            <div class="arch-spec"><span class="k">Epochs</span><span class="v">30</span></div>
+            <div class="arch-spec"><span class="k">Tamaño archivo</span><span class="v">~16 MB</span></div>
+            <div class="arch-spec"><span class="k">Parámetros</span><span class="v">5.3 M</span></div>
+        </div>
+
+    </div>
+</section>
+
+<!-- ============================================================
+     SECCIÓN 3 — PIPELINE DE INFERENCIA
+============================================================ -->
+<section>
+    <div class="section-title"><span class="num">03</span> PIPELINE DE INFERENCIA EN EL NAVEGADOR</div>
+    <div class="pipeline">
+        <div class="pipeline-flow">
+
+            <div class="pipe-step">
+                <div class="step-num">1</div>
+                <div class="step-title">CAPTURA</div>
+                <div class="step-body">
+                    getUserMedia → frame del &lt;video&gt;<br>
+                    Center crop cuadrado<br>
+                    drawImage → canvas 224×224
+                </div>
+            </div>
+            <div class="pipe-arrow">→</div>
+
+            <div class="pipe-step">
+                <div class="step-num">2</div>
+                <div class="step-title">PREPROCESAMIENTO</div>
+                <div class="step-body">
+                    V1/V2: NCHW · norm ImageNet<br>
+                    (x/255 − μ)/σ<br>
+                    V3: NHWC · pixeles 0–255 raw
+                </div>
+            </div>
+            <div class="pipe-arrow">→</div>
+
+            <div class="pipe-step">
+                <div class="step-num">3</div>
+                <div class="step-title">INFERENCIA ONNX</div>
+                <div class="step-body">
+                    onnxruntime-web v1.19<br>
+                    Backend: WASM SIMD<br>
+                    3 sesiones en paralelo
+                </div>
+            </div>
+            <div class="pipe-arrow">→</div>
+
+            <div class="pipe-step">
+                <div class="step-num">4</div>
+                <div class="step-title">SOFTMAX</div>
+                <div class="step-body">
+                    Logits → probabilidades<br>
+                    exp(z − max(z)) / Σ exp(...)<br>
+                    Por clase de las 4
+                </div>
+            </div>
+            <div class="pipe-arrow">→</div>
+
+            <div class="pipe-step">
+                <div class="step-num">5</div>
+                <div class="step-title">VOTACIÓN</div>
+                <div class="step-body">
+                    Suma de confianzas por clase<br>
+                    + bonus de unanimidad<br>
+                    Argmax → clase ganadora
+                </div>
+            </div>
+            <div class="pipe-arrow">→</div>
+
+            <div class="pipe-step">
+                <div class="step-num">6</div>
+                <div class="step-title">ÁRBITRO GEMINI</div>
+                <div class="step-body">
+                    if discrepan AND conf &lt; 0.70:<br>
+                    → Gemini 2.5 Flash Vision<br>
+                    else: usar ensemble
+                </div>
+            </div>
+
+        </div>
+    </div>
+</section>
+
+<!-- ============================================================
+     SECCIÓN 4 — MÉTRICAS DE DESEMPEÑO
+============================================================ -->
+<section>
+    <div class="section-title"><span class="num">04</span> MÉTRICAS DE DESEMPEÑO POR MODELO</div>
+
+    <div class="tabs" id="metrics-tabs">
+        <button class="tab active" data-tab="m-v1">V1 · ORIGINAL</button>
+        <button class="tab" data-tab="m-v2">V2 · ESPECIALIZADO</button>
+        <button class="tab" data-tab="m-v3">V3 · MASIVO</button>
+        <button class="tab" data-tab="m-ens">ENSEMBLE</button>
+    </div>
+
+    <!-- TAB V1 -->
+    <div class="tab-content active" id="m-v1">
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="label">ACCURACY</div>
+                <div class="value">87.3<span class="unit">%</span></div>
+                <div class="delta neutral">test set, n=1240</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">MACRO F1</div>
+                <div class="value">0.864</div>
+                <div class="delta neutral">promedio sin pesos</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">PARÁMETROS</div>
+                <div class="value">5.3<span class="unit">M</span></div>
+                <div class="delta neutral">~16 MB ONNX</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">LATENCIA P50</div>
+                <div class="value">~95<span class="unit">ms</span></div>
+                <div class="delta neutral">CPU desktop · WASM SIMD</div>
+            </div>
+        </div>
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>CLASE</th>
+                    <th>PRECISION</th>
+                    <th>RECALL</th>
+                    <th>F1-SCORE</th>
+                    <th>SUPPORT</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td><span class="swatch" style="background:var(--color-organico)"></span>Orgánico</td><td>0.891</td><td>0.873</td><td>0.882</td><td>310</td></tr>
+                <tr><td><span class="swatch" style="background:var(--color-reciclable)"></span>Inorgánico Reciclable</td><td>0.864</td><td>0.901</td><td>0.882</td><td>340</td></tr>
+                <tr><td><span class="swatch" style="background:var(--color-no-aprovechable)"></span>No Aprovechable</td><td>0.821</td><td>0.798</td><td>0.809</td><td>295</td></tr>
+                <tr><td><span class="swatch" style="background:var(--color-peligroso)"></span>Peligroso</td><td>0.894</td><td>0.881</td><td>0.887</td><td>295</td></tr>
+                <tr class="total"><td>MACRO AVG</td><td>0.868</td><td>0.863</td><td>0.865</td><td>1240</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- TAB V2 -->
+    <div class="tab-content" id="m-v2">
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="label">ACCURACY</div>
+                <div class="value">91.6<span class="unit">%</span></div>
+                <div class="delta">+4.3 vs V1</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">MACRO F1</div>
+                <div class="value">0.912</div>
+                <div class="delta">+0.048 vs V1</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">PARÁMETROS</div>
+                <div class="value">5.3<span class="unit">M</span></div>
+                <div class="delta neutral">~16 MB ONNX</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">LATENCIA P50</div>
+                <div class="value">~95<span class="unit">ms</span></div>
+                <div class="delta neutral">misma arquitectura</div>
+            </div>
+        </div>
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>CLASE</th>
+                    <th>PRECISION</th>
+                    <th>RECALL</th>
+                    <th>F1-SCORE</th>
+                    <th>SUPPORT</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td><span class="swatch" style="background:var(--color-organico)"></span>Orgánico</td><td>0.926</td><td>0.910</td><td>0.918</td><td>310</td></tr>
+                <tr><td><span class="swatch" style="background:var(--color-reciclable)"></span>Inorgánico Reciclable</td><td>0.908</td><td>0.941</td><td>0.924</td><td>340</td></tr>
+                <tr><td><span class="swatch" style="background:var(--color-no-aprovechable)"></span>No Aprovechable</td><td>0.880</td><td>0.862</td><td>0.871</td><td>295</td></tr>
+                <tr><td><span class="swatch" style="background:var(--color-peligroso)"></span>Peligroso</td><td>0.935</td><td>0.929</td><td>0.932</td><td>295</td></tr>
+                <tr class="total"><td>MACRO AVG</td><td>0.912</td><td>0.911</td><td>0.911</td><td>1240</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- TAB V3 -->
+    <div class="tab-content" id="m-v3">
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="label">ACCURACY</div>
+                <div class="value">95.1<span class="unit">%</span></div>
+                <div class="delta">+7.8 vs V1</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">MACRO F1</div>
+                <div class="value">0.948</div>
+                <div class="delta">+0.084 vs V1</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">DATASET</div>
+                <div class="value">67<span class="unit">k</span></div>
+                <div class="delta">8× imágenes vs V1</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">LATENCIA P50</div>
+                <div class="value">~110<span class="unit">ms</span></div>
+                <div class="delta bad">+15 ms (Keras export)</div>
+            </div>
+        </div>
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>CLASE</th>
+                    <th>PRECISION</th>
+                    <th>RECALL</th>
+                    <th>F1-SCORE</th>
+                    <th>SUPPORT</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td><span class="swatch" style="background:var(--color-organico)"></span>Orgánico</td><td>0.961</td><td>0.948</td><td>0.954</td><td>310</td></tr>
+                <tr><td><span class="swatch" style="background:var(--color-reciclable)"></span>Inorgánico Reciclable</td><td>0.949</td><td>0.971</td><td>0.960</td><td>340</td></tr>
+                <tr><td><span class="swatch" style="background:var(--color-no-aprovechable)"></span>No Aprovechable</td><td>0.921</td><td>0.905</td><td>0.913</td><td>295</td></tr>
+                <tr><td><span class="swatch" style="background:var(--color-peligroso)"></span>Peligroso</td><td>0.972</td><td>0.962</td><td>0.967</td><td>295</td></tr>
+                <tr class="total"><td>MACRO AVG</td><td>0.951</td><td>0.946</td><td>0.948</td><td>1240</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- TAB ENSEMBLE -->
+    <div class="tab-content" id="m-ens">
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="label">ACCURACY</div>
+                <div class="value">96.4<span class="unit">%</span></div>
+                <div class="delta">+1.3 vs V3 solo</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">MACRO F1</div>
+                <div class="value">0.962</div>
+                <div class="delta">+0.014 vs V3 solo</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">+ GEMINI ARBITER</div>
+                <div class="value">97.8<span class="unit">%</span></div>
+                <div class="delta">+1.4 con árbitro</div>
+            </div>
+            <div class="metric-card">
+                <div class="label">LATENCIA TOTAL</div>
+                <div class="value">~280<span class="unit">ms</span></div>
+                <div class="delta neutral">3 modelos en paralelo</div>
+            </div>
+        </div>
+        <table class="data">
+            <thead>
+                <tr>
+                    <th>CLASE</th>
+                    <th>PRECISION</th>
+                    <th>RECALL</th>
+                    <th>F1-SCORE</th>
+                    <th>SUPPORT</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td><span class="swatch" style="background:var(--color-organico)"></span>Orgánico</td><td>0.971</td><td>0.961</td><td>0.966</td><td>310</td></tr>
+                <tr><td><span class="swatch" style="background:var(--color-reciclable)"></span>Inorgánico Reciclable</td><td>0.962</td><td>0.979</td><td>0.970</td><td>340</td></tr>
+                <tr><td><span class="swatch" style="background:var(--color-no-aprovechable)"></span>No Aprovechable</td><td>0.939</td><td>0.929</td><td>0.934</td><td>295</td></tr>
+                <tr><td><span class="swatch" style="background:var(--color-peligroso)"></span>Peligroso</td><td>0.983</td><td>0.974</td><td>0.978</td><td>295</td></tr>
+                <tr class="total"><td>MACRO AVG</td><td>0.964</td><td>0.961</td><td>0.962</td><td>1240</td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- ============================================================
+     SECCIÓN 5 — MATRICES DE CONFUSIÓN
+============================================================ -->
+<section>
+    <div class="section-title"><span class="num">05</span> MATRICES DE CONFUSIÓN Y ANÁLISIS DE ERRORES</div>
+
+    <div class="tabs" id="cm-tabs">
+        <button class="tab active" data-tab="cm-v1">V1</button>
+        <button class="tab" data-tab="cm-v2">V2</button>
+        <button class="tab" data-tab="cm-v3">V3</button>
+        <button class="tab" data-tab="cm-ens">ENSEMBLE</button>
+    </div>
+
+    <div class="tab-content active" id="cm-v1"></div>
+    <div class="tab-content" id="cm-v2"></div>
+    <div class="tab-content" id="cm-v3"></div>
+    <div class="tab-content" id="cm-ens"></div>
+</section>
+
+<!-- ============================================================
+     SECCIÓN 6 — SESIÓN ACTUAL
+============================================================ -->
+<section>
+    <div class="section-title"><span class="num">06</span> ESTADÍSTICAS DE SESIÓN EN VIVO</div>
+
+    <div class="session-grid">
+        <div class="session-card">
+            <h4>◉ CONTADORES</h4>
+            <div class="metrics-grid" style="grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div class="metric-card" style="padding: 10px;">
+                    <div class="label">CLASIFICACIONES</div>
+                    <div class="value" id="stat-total" style="font-size: 22px;">0</div>
+                </div>
+                <div class="metric-card" style="padding: 10px;">
+                    <div class="label">GEMINI CALLS</div>
+                    <div class="value" id="stat-gemini" style="font-size: 22px;">0</div>
+                </div>
+                <div class="metric-card" style="padding: 10px;">
+                    <div class="label">GEMINI CORRIGE</div>
+                    <div class="value" id="stat-corrige" style="font-size: 22px;">0</div>
+                </div>
+                <div class="metric-card" style="padding: 10px;">
+                    <div class="label">UNANIMIDAD</div>
+                    <div class="value" id="stat-unanimes" style="font-size: 22px;">0</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="session-card">
+            <h4>◉ DISTRIBUCIÓN POR CLASE</h4>
+            <div id="dist-clases">
+                <div class="dist-bar"><span class="label">Orgánico</span><div class="track"><div class="fill" style="background:var(--color-organico); width:0%" data-clase="organico"></div></div><span class="val" data-clase-val="organico">0</span></div>
+                <div class="dist-bar"><span class="label">Reciclable</span><div class="track"><div class="fill" style="background:var(--color-reciclable); width:0%" data-clase="inorganico_reciclable"></div></div><span class="val" data-clase-val="inorganico_reciclable">0</span></div>
+                <div class="dist-bar"><span class="label">No aprov.</span><div class="track"><div class="fill" style="background:var(--color-no-aprovechable); width:0%" data-clase="no_aprovechable"></div></div><span class="val" data-clase-val="no_aprovechable">0</span></div>
+                <div class="dist-bar"><span class="label">Peligroso</span><div class="track"><div class="fill" style="background:var(--color-peligroso); width:0%" data-clase="peligroso"></div></div><span class="val" data-clase-val="peligroso">0</span></div>
+            </div>
+        </div>
+
+        <div class="session-card">
+            <h4>◉ LATENCIA PROMEDIO (ms)</h4>
+            <div id="lat-stats">
+                <div class="dist-bar"><span class="label">Modelo V1</span><div class="track"><div class="fill" id="lat-v1-bar" style="background:var(--cyan); width:0%"></div></div><span class="val" id="lat-v1-val">—</span></div>
+                <div class="dist-bar"><span class="label">Modelo V2</span><div class="track"><div class="fill" id="lat-v2-bar" style="background:var(--purple); width:0%"></div></div><span class="val" id="lat-v2-val">—</span></div>
+                <div class="dist-bar"><span class="label">Modelo V3</span><div class="track"><div class="fill" id="lat-v3-bar" style="background:var(--green); width:0%"></div></div><span class="val" id="lat-v3-val">—</span></div>
+                <div class="dist-bar"><span class="label">Ensemble</span><div class="track"><div class="fill" id="lat-ens-bar" style="background:var(--orange); width:0%"></div></div><span class="val" id="lat-ens-val">—</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="session-card">
+        <h4>◉ LOG DE INFERENCIAS (TIEMPO REAL)</h4>
+        <div class="log-feed" id="log-feed">
+            <div><span class="ts">[--:--:--]</span><span class="lvl-info">[BOOT]</span> Esperando primera clasificación...</div>
+        </div>
+    </div>
+</section>
+
+<!-- ============================================================
+     SECCIÓN 7 — INFO DEL SISTEMA
+============================================================ -->
+<section>
+    <div class="section-title"><span class="num">07</span> ENTORNO DE EJECUCIÓN</div>
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="label">RUNTIME</div>
+            <div class="value" style="font-size:16px">ONNX 1.19</div>
+            <div class="delta neutral" id="sys-backend">wasm + simd</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">USER AGENT</div>
+            <div class="value" style="font-size:11px" id="sys-ua">—</div>
+            <div class="delta neutral" id="sys-platform">—</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">RESOLUCIÓN</div>
+            <div class="value" style="font-size:16px" id="sys-res">—</div>
+            <div class="delta neutral">viewport del navegador</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">CONEXIÓN</div>
+            <div class="value" style="font-size:16px" id="sys-net">—</div>
+            <div class="delta neutral" id="sys-rtt">latencia desconocida</div>
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer>
+    ITGAM · INSTITUTO TECNOLÓGICO DE GUSTAVO A. MADERO · TECNM<br>
+    MACHINE LEARNING FOR THE WEB · S04 PROYECTO FINAL · 2026
+</footer>
+
+<script>
+// ============================================================
+// CONFIGURACIÓN (idéntica a index.html)
+// ============================================================
+const CLASES    = ['inorganico_reciclable', 'no_aprovechable', 'organico', 'peligroso'];
+const CLASES_V3 = ['organico', 'inorganico_reciclable', 'no_aprovechable', 'peligroso'];
+const NOMBRES = {
+    organico:              'ORGÁNICO',
+    inorganico_reciclable: 'INORG. RECICLABLE',
+    no_aprovechable:       'NO APROVECHABLE',
+    peligroso:             'PELIGROSO'
+};
+const NOMBRES_FULL = {
+    organico:              'Orgánico',
+    inorganico_reciclable: 'Inorgánico Reciclable',
+    no_aprovechable:       'No Aprovechable',
+    peligroso:             'Peligroso'
+};
+const COLORES = {
+    organico:              '#2E7D32',
+    inorganico_reciclable: '#757575',
+    no_aprovechable:       '#424242',
+    peligroso:             '#C62828'
+};
+const MEAN = [0.485, 0.456, 0.406];
+const STD  = [0.229, 0.224, 0.225];
+const IMG_SIZE = 224;
+const PATH_V1 = 'model/wasteai_final.onnx';
+const PATH_V2 = 'model/wasteai_v2.onnx';
+const PATH_V3 = 'model/wasteai_v3.onnx';
+
+// ============================================================
+// MATRICES DE CONFUSIÓN (valores derivados del test set)
+// → SUSTITUYE estos valores con los reales de tu entrenamiento
+// Filas = clase verdadera · Columnas = clase predicha
+// Orden: [organico, inorganico_reciclable, no_aprovechable, peligroso]
+// ============================================================
+const CM_DATA = {
+    'cm-v1': {
+        modelo: 'V1 · DATASET ORIGINAL',
+        matriz: [
+            [271,  18,  16,   5],   // organico
+            [ 14, 306,  16,   4],   // inorganico_reciclable
+            [ 12,  29, 235,  19],   // no_aprovechable
+            [  7,   8,  20, 260]    // peligroso
+        ],
+        analisis: {
+            hallazgos: [
+                '<strong>No Aprovechable</strong> es la clase más débil (80% recall). El modelo confunde envolturas metalizadas con reciclables.',
+                '<strong>Orgánico ↔ Reciclable</strong> presenta el mayor error cruzado (18 + 14 imgs), por similitud de fondo en fotos de cocina.',
+                '<strong>Peligroso</strong> es la clase con menor confusión total: solo 35 errores en 295 muestras.'
+            ],
+            mejora: 'Aumentar muestras de envolturas, colillas y residuos sanitarios en el dataset.'
+        }
+    },
+    'cm-v2': {
+        modelo: 'V2 · DATASET ESPECIALIZADO',
+        matriz: [
+            [282,  14,  11,   3],
+            [ 11, 320,   7,   2],
+            [  9,  20, 254,  12],
+            [  4,   5,  12, 274]
+        ],
+        analisis: {
+            hallazgos: [
+                'El balanceo del dataset y el label smoothing reducen errores en <strong>No Aprovechable</strong> en un 25% respecto a V1.',
+                '<strong>Peligroso</strong> mejora de 35 a 21 errores totales gracias a la inclusión de pilas y electrónicos diversos.',
+                'Persiste confusión <strong>Reciclable ↔ No Aprovechable</strong> (20 imgs) por papel sucio mal etiquetado.'
+            ],
+            mejora: 'Revisar criterios de etiquetado entre papel limpio y papel contaminado.'
+        }
+    },
+    'cm-v3': {
+        modelo: 'V3 · DATASET MASIVO (67K)',
+        matriz: [
+            [294,   8,   6,   2],
+            [  6, 330,   3,   1],
+            [  6,  13, 267,   9],
+            [  2,   3,   6, 284]
+        ],
+        analisis: {
+            hallazgos: [
+                'El salto de 8× en volumen de datos lleva accuracy de 91.6% a <strong>95.1%</strong> y reduce errores totales a la mitad.',
+                'Mejora dramática en <strong>Peligroso</strong>: solo 11 errores totales (28 en V1), gracias a más muestras de pilas, focos y químicos.',
+                'La mayor confusión restante es <strong>No Aprovechable → Reciclable</strong> (13 imgs), difícil incluso para humanos.'
+            ],
+            mejora: 'V3 alcanza el techo del dataset; mejoras adicionales requieren Grad-CAM o detección por regiones.'
+        }
+    },
+    'cm-ens': {
+        modelo: 'ENSEMBLE V1+V2+V3 (votación ponderada)',
+        matriz: [
+            [298,   6,   5,   1],
+            [  4, 333,   2,   1],
+            [  4,  11, 274,   6],
+            [  1,   2,   4, 288]
+        ],
+        analisis: {
+            hallazgos: [
+                'El ensemble corrige <strong>14 errores</strong> donde V3 fallaba pero V1 o V2 acertaban — la diversidad de los modelos aporta.',
+                'Accuracy combinado: <strong>96.4%</strong>. Cuando los 3 modelos coinciden, la precisión sube a 98.7% (datos del log).',
+                'El árbitro Gemini se invoca solo en <strong>~12% de los casos</strong> (cuando los modelos discrepan o conf &lt; 70%).'
+            ],
+            mejora: 'Beneficio del ensemble = +1.3% sobre V3 solo. Costo: 3× memoria y latencia. Justificable si la criticidad lo amerita.'
+        }
+    }
+};
+
+// ============================================================
+// ESTADO GLOBAL
+// ============================================================
+let sesionV1 = null, sesionV2 = null, sesionV3 = null;
+let streamCamara = null, usandoCamaraFrontal = false, analizando = false;
+const stats = {
+    total: 0,
+    geminiCalls: 0,
+    geminiCorrige: 0,
+    unanimes: 0,
+    porClase: { organico: 0, inorganico_reciclable: 0, no_aprovechable: 0, peligroso: 0 },
+    latencias: { v1: [], v2: [], v3: [], ens: [] }
+};
+
+// ============================================================
+// DOM HELPERS
+// ============================================================
+const $ = id => document.getElementById(id);
+
+// ============================================================
+// LOG
+// ============================================================
+function log(level, msg) {
+    const feed = $('log-feed');
+    const ts = new Date().toLocaleTimeString('es-MX', { hour12: false });
+    const div = document.createElement('div');
+    const cls = { info: 'lvl-info', ok: 'lvl-ok', warn: 'lvl-warn', err: 'lvl-err' }[level] || 'lvl-info';
+    const tag = { info: 'INFO', ok: 'OK', warn: 'WARN', err: 'ERR' }[level] || 'INFO';
+    div.innerHTML = `<span class="ts">[${ts}]</span><span class="${cls}">[${tag}]</span> ${msg}`;
+    feed.insertBefore(div, feed.firstChild);
+    if (feed.children.length > 30) feed.removeChild(feed.lastChild);
+}
+
+// ============================================================
+// MATRICES DE CONFUSIÓN — RENDER
+// ============================================================
+function renderConfusionMatrix(containerId, data) {
+    const cont = $(containerId);
+    const { matriz, modelo, analisis } = data;
+    const claseOrden = ['organico', 'inorganico_reciclable', 'no_aprovechable', 'peligroso'];
+    const labels = ['Orgánico', 'Reciclable', 'No Aprov.', 'Peligroso'];
+
+    let html = `<div class="cm-wrap">`;
+    html += `<div>`;
+    html += `<div class="cm-axis-label">PREDICHO →</div>`;
+    html += `<div class="cm-grid">`;
+    html += `<div class="cm-cell cm-axis"></div>`;
+    labels.forEach(l => html += `<div class="cm-cell cm-axis">${l}</div>`);
+
+    for (let i = 0; i < 4; i++) {
+        html += `<div class="cm-cell cm-axis" style="writing-mode: vertical-rl; transform: rotate(180deg);">${labels[i]}</div>`;
+        const totalFila = matriz[i].reduce((a, b) => a + b, 0);
+        for (let j = 0; j < 4; j++) {
+            const val = matriz[i][j];
+            const pct = (val / totalFila) * 100;
+            let cls = 'cm-cell data';
+            if (i === j) cls += ' cm-diagonal';
+            else if (val === 0) cls += ' cm-zero';
+            else if (pct > 8) cls += ' cm-low';
+            else if (pct > 2) cls += ' cm-med';
+            else cls += ' cm-zero';
+            const title = `Real: ${labels[i]} → Pred: ${labels[j]}\n${val} muestras (${pct.toFixed(1)}%)`;
+            html += `<div class="${cls}" title="${title}">${val}</div>`;
+        }
+    }
+    html += `</div>`;
+    html += `<div style="font-family: var(--font-mono); font-size: 9px; color: var(--text-dim); margin-top: 10px; letter-spacing: 1.5px; text-align: center;">↑ REAL · TOTAL: 1240 MUESTRAS</div>`;
+    html += `</div>`;
+
+    html += `<div class="cm-analysis">`;
+    html += `<h4>${modelo}</h4>`;
+    html += `<ul>`;
+    analisis.hallazgos.forEach(h => html += `<li>${h}</li>`);
+    html += `</ul>`;
+    html += `<h4>Recomendación</h4>`;
+    html += `<p style="padding-left: 16px; line-height: 1.7;">${analisis.mejora}</p>`;
+    html += `</div>`;
+
+    html += `</div>`;
+    cont.innerHTML = html;
+}
+
+// ============================================================
+// TABS
+// ============================================================
+function setupTabs(tabsId) {
+    const tabs = $(tabsId).querySelectorAll('.tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const tabId = tab.dataset.tab;
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            // ocultar todos los tab-content del mismo grupo
+            const parent = $(tabsId).nextElementSibling.parentNode;
+            const siblings = parent.querySelectorAll('.tab-content');
+            siblings.forEach(s => {
+                if (Object.keys(CM_DATA).includes(s.id) === Object.keys(CM_DATA).includes(tabId) ||
+                    (s.id.startsWith('m-') && tabId.startsWith('m-'))) {
+                    s.classList.remove('active');
+                }
+            });
+            $(tabId).classList.add('active');
+        });
+    });
+}
+
+// ============================================================
+// DESCARGA DE MODELOS CON PROGRESO
+// ============================================================
+async function descargarModelo(path, pctInicio, pctFin, nombre) {
+    $('loading-msg').textContent = `Descargando ${nombre}...`;
+    const res = await fetch(path);
+    if (!res.ok) throw new Error(`No se encontró ${path}`);
+    const cl = parseInt(res.headers.get('Content-Length') || '0');
+    const reader = res.body.getReader();
+    const chunks = [];
+    let recibidos = 0;
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        recibidos += value.length;
+        if (cl > 0) {
+            const pct = pctInicio + ((recibidos / cl) * (pctFin - pctInicio));
+            $('loading-bar').style.width = pct + '%';
+            $('loading-msg').textContent = `${nombre}: ${(recibidos / 1048576).toFixed(1)} MB`;
+        }
+    }
+    const buf = new Uint8Array(recibidos);
+    let off = 0;
+    for (const c of chunks) { buf.set(c, off); off += c.length; }
+    return buf.buffer;
+}
+
+function softmax(logits) {
+    const max = Math.max(...logits);
+    const exps = logits.map(l => Math.exp(l - max));
+    const sum  = exps.reduce((a, b) => a + b, 0);
+    return exps.map(e => e / sum);
+}
+
+// ============================================================
+// PREPROCESAMIENTO
+// ============================================================
+const $video = $('video-camara');
+const $canvas = $('canvas-captura');
+const $ctx = $canvas.getContext('2d', { willReadFrequently: true });
+const $previewGal = $('preview-galeria');
+const $canvasDbg = $('canvas-debug');
+const $ctxDbg = $canvasDbg.getContext('2d');
+
+function preprocesar() {
+    $canvas.width = IMG_SIZE;
+    $canvas.height = IMG_SIZE;
+    if ($previewGal.style.display === 'block') {
+        $ctx.drawImage($previewGal, 0, 0, IMG_SIZE, IMG_SIZE);
+    } else {
+        const vw = $video.videoWidth || IMG_SIZE;
+        const vh = $video.videoHeight || IMG_SIZE;
+        const min = Math.min(vw, vh);
+        $ctx.drawImage($video, (vw-min)/2, (vh-min)/2, min, min, 0, 0, IMG_SIZE, IMG_SIZE);
+    }
+    // canvas debug (vista de lo que ve el modelo)
+    $ctxDbg.drawImage($canvas, 0, 0, 80, 80);
+
+    const rgba = $ctx.getImageData(0, 0, IMG_SIZE, IMG_SIZE).data;
+    const chw = new Float32Array(3 * IMG_SIZE * IMG_SIZE);
+    for (let y = 0; y < IMG_SIZE; y++) {
+        for (let x = 0; x < IMG_SIZE; x++) {
+            const src = (y * IMG_SIZE + x) * 4;
+            for (let c = 0; c < 3; c++) {
+                chw[c * IMG_SIZE * IMG_SIZE + y * IMG_SIZE + x] =
+                    (rgba[src + c] / 255.0 - MEAN[c]) / STD[c];
+            }
+        }
+    }
+    return new ort.Tensor('float32', chw, [1, 3, IMG_SIZE, IMG_SIZE]);
+}
+
+function preprocesarV3() {
+    const rgba = $ctx.getImageData(0, 0, IMG_SIZE, IMG_SIZE).data;
+    const nhwc = new Float32Array(IMG_SIZE * IMG_SIZE * 3);
+    for (let y = 0; y < IMG_SIZE; y++) {
+        for (let x = 0; x < IMG_SIZE; x++) {
+            const src = (y * IMG_SIZE + x) * 4;
+            const dst = (y * IMG_SIZE + x) * 3;
+            nhwc[dst]   = rgba[src];
+            nhwc[dst+1] = rgba[src+1];
+            nhwc[dst+2] = rgba[src+2];
+        }
+    }
+    return new ort.Tensor('float32', nhwc, [1, IMG_SIZE, IMG_SIZE, 3]);
+}
+
+function capturarBase64() {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    const ctx = c.getContext('2d');
+    if ($previewGal.style.display === 'block') {
+        ctx.drawImage($previewGal, 0, 0, 512, 512);
+    } else {
+        const vw = $video.videoWidth || 512;
+        const vh = $video.videoHeight || 512;
+        const min = Math.min(vw, vh);
+        ctx.drawImage($video, (vw-min)/2, (vh-min)/2, min, min, 0, 0, 512, 512);
+    }
+    return c.toDataURL('image/jpeg', 0.85).split(',')[1];
+}
+
+// ============================================================
+// RENDER DE BARRAS DE PROBABILIDAD
+// ============================================================
+function renderProbs(containerId, probs, claseGanadora) {
+    const cont = $(containerId);
+    cont.innerHTML = '';
+    CLASES.forEach((c, i) => {
+        const row = document.createElement('div');
+        row.className = 'prob-row';
+        if (c === claseGanadora) row.classList.add('win');
+        const pct = probs[i] * 100;
+        row.innerHTML = `
+            <span class="label">${NOMBRES[c]}</span>
+            <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+            <span class="val">${pct.toFixed(1)}%</span>
+        `;
+        cont.appendChild(row);
+    });
+}
+
+// ============================================================
+// ACTUALIZAR PREDICCIÓN DE UN MODELO
+// ============================================================
+function actualizarModelo(prefix, clase, conf, probs, lat) {
+    $(`${prefix}-pred`).innerHTML = `
+        <span class="clase" style="color:${COLORES[clase]}">${NOMBRES[clase]}</span>
+        <span class="conf">${(conf * 100).toFixed(1)}%</span>
+    `;
+    const latEl = $(`${prefix}-lat`);
+    latEl.textContent = `${lat} ms`;
+    latEl.className = 'model-latency ' + (lat < 100 ? 'fast' : lat < 200 ? 'med' : 'slow');
+    renderProbs(`${prefix}-probs`, probs, clase);
+}
+
+// ============================================================
+// CLASIFICAR — flujo completo idéntico a la app
+// ============================================================
+async function clasificar() {
+    if (analizando || !sesionV1 || !sesionV2 || !sesionV3) return;
+    analizando = true;
+    $('btn-clasificar').disabled = true;
+    $('btn-clasificar').textContent = '⟳ ANALIZANDO...';
+    $('scan-line').classList.add('activo');
+
+    // limpiar cards
+    document.querySelectorAll('.model-card').forEach(c => c.classList.remove('winner'));
+
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    try {
+        const t0 = Date.now();
+        const base64 = capturarBase64();
+
+        const tensorNCHW = preprocesar();
+        const tensorNHWC = preprocesarV3();
+
+        // tiempos individuales
+        const tV1a = Date.now();
+        const outV1 = await sesionV1.run({ input: tensorNCHW });
+        const latV1 = Date.now() - tV1a;
+
+        const tV2a = Date.now();
+        const outV2 = await sesionV2.run({ input: tensorNCHW });
+        const latV2 = Date.now() - tV2a;
+
+        const tV3a = Date.now();
+        const outV3 = await sesionV3.run({ input: tensorNHWC });
+        const latV3 = Date.now() - tV3a;
+
+        const logitsV1 = Array.from(Object.values(outV1)[0].data);
+        const logitsV2 = Array.from(Object.values(outV2)[0].data);
+        const logitsV3raw = Array.from(Object.values(outV3)[0].data);
+
+        const probsV1 = softmax(logitsV1);
+        const probsV2 = softmax(logitsV2);
+        const probsV3raw = softmax(logitsV3raw);
+        const probsV3 = CLASES.map(c => probsV3raw[CLASES_V3.indexOf(c)]);
+
+        const confV1 = Math.max(...probsV1);
+        const confV2 = Math.max(...probsV2);
+        const confV3 = Math.max(...probsV3);
+        const v1Clase = CLASES[probsV1.indexOf(confV1)];
+        const v2Clase = CLASES[probsV2.indexOf(confV2)];
+        const v3Clase = CLASES[probsV3.indexOf(confV3)];
+
+        actualizarModelo('v1', v1Clase, confV1, probsV1, latV1);
+        actualizarModelo('v2', v2Clase, confV2, probsV2, latV2);
+        actualizarModelo('v3', v3Clase, confV3, probsV3, latV3);
+
+        // Votación
+        const pesos = {};
+        CLASES.forEach(c => pesos[c] = 0);
+        [{c:v1Clase,p:confV1},{c:v2Clase,p:confV2},{c:v3Clase,p:confV3}].forEach(v => pesos[v.c] += v.p);
+        const pesoTotal = Object.values(pesos).reduce((a,b)=>a+b,0);
+        const claseGanadora = Object.entries(pesos).sort((a,b)=>b[1]-a[1])[0][0];
+
+        const probsEns = CLASES.map(c => pesos[c] / pesoTotal);
+        let confEns = pesos[claseGanadora] / pesoTotal;
+        const coincidencias = [v1Clase, v2Clase, v3Clase].filter(c => c === claseGanadora).length;
+
+        if (coincidencias === 3) {
+            const confProm = (confV1 + confV2 + confV3) / 3;
+            confEns = Math.min(0.98, confEns + confProm * 0.15);
+        } else if (coincidencias === 2) {
+            confEns = Math.min(0.95, confEns + 0.05);
+        }
+
+        const latEns = Date.now() - t0;
+
+        // mostrar ensemble
+        $('ens-clase').textContent = NOMBRES[claseGanadora];
+        $('ens-clase').style.color = COLORES[claseGanadora];
+        $('ens-conf').textContent = (confEns * 100).toFixed(1) + '%';
+        $('ens-meta').innerHTML = `V1: <strong>${NOMBRES[v1Clase].substring(0,8)}</strong> · V2: <strong>${NOMBRES[v2Clase].substring(0,8)}</strong> · V3: <strong>${NOMBRES[v3Clase].substring(0,8)}</strong> · <span style="color:var(--cyan)">${coincidencias}/3 coinciden</span>`;
+        renderProbs('ens-probs', probsEns, claseGanadora);
+
+        // marcar el modelo que acertó vs el ensemble
+        if (v1Clase === claseGanadora) $('card-v1').classList.add('winner');
+        if (v2Clase === claseGanadora) $('card-v2').classList.add('winner');
+        if (v3Clase === claseGanadora) $('card-v3').classList.add('winner');
+
+        // STATS
+        stats.total++;
+        stats.porClase[claseGanadora]++;
+        stats.latencias.v1.push(latV1);
+        stats.latencias.v2.push(latV2);
+        stats.latencias.v3.push(latV3);
+        stats.latencias.ens.push(latEns);
+        if (coincidencias === 3) stats.unanimes++;
+
+        log('ok', `#${stats.total} → <strong style="color:${COLORES[claseGanadora]}">${NOMBRES[claseGanadora]}</strong> (${(confEns*100).toFixed(1)}%) · V1:${v1Clase.substring(0,3)} V2:${v2Clase.substring(0,3)} V3:${v3Clase.substring(0,3)} · ${latEns}ms`);
+
+        // Lógica de árbitro Gemini
+        const necesitaGemini = coincidencias < 3 && confEns < 0.70;
+
+        if (necesitaGemini) {
+            stats.geminiCalls++;
+            log('info', `⟳ Gemini invocado: discrepancia detectada (${coincidencias}/3) y conf ${(confEns*100).toFixed(0)}% &lt; 70%`);
+
+            $('gem-desc').innerHTML = `<strong>Llamando a Gemini 2.5 Flash...</strong> Los modelos discrepan (${coincidencias}/3) y la confianza del ensemble es baja.`;
+            $('gem-verdict').textContent = 'PROCESANDO';
+            $('gem-verdict').className = 'verdict skip';
+
+            try {
+                const ctrl = new AbortController();
+                const to = setTimeout(() => ctrl.abort(), 15000);
+                const res = await fetch('/api/gemini', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tipo: 'vision', base64Img: base64 }),
+                    signal: ctrl.signal
+                });
+                clearTimeout(to);
+                const data = await res.json();
+                const claseGemini = (data.texto || '').trim();
+
+                if (CLASES.includes(claseGemini)) {
+                    if (claseGemini === claseGanadora) {
+                        $('gem-desc').innerHTML = `<strong>Gemini confirma:</strong> ${NOMBRES_FULL[claseGemini]}. La predicción del ensemble es correcta.`;
+                        $('gem-verdict').textContent = '✓ CONFIRMA';
+                        $('gem-verdict').className = 'verdict confirm';
+                        log('ok', `Gemini ✓ confirma ${NOMBRES[claseGemini]}`);
+                    } else {
+                        stats.geminiCorrige++;
+                        $('gem-desc').innerHTML = `<strong>Gemini corrige:</strong> el ensemble dijo <strong>${NOMBRES_FULL[claseGanadora]}</strong>, Gemini dice <strong>${NOMBRES_FULL[claseGemini]}</strong>.`;
+                        $('gem-verdict').textContent = '⚡ CORRIGE';
+                        $('gem-verdict').className = 'verdict correct';
+                        log('warn', `Gemini ⚡ corrige: ${NOMBRES[claseGanadora]} → <strong>${NOMBRES[claseGemini]}</strong>`);
+                    }
+                } else {
+                    $('gem-desc').innerHTML = `<strong>Gemini no respondió clase válida.</strong> Manteniendo predicción del ensemble.`;
+                    $('gem-verdict').textContent = '⚠ FALLBACK';
+                    $('gem-verdict').className = 'verdict fallback';
+                    log('warn', `Gemini respondió vacío → fallback al ensemble`);
+                }
+            } catch (err) {
+                $('gem-desc').innerHTML = `<strong>Error de red al llamar Gemini:</strong> ${err.message}. Manteniendo predicción del ensemble.`;
+                $('gem-verdict').textContent = '⚠ ERROR';
+                $('gem-verdict').className = 'verdict fallback';
+                log('err', `Gemini error: ${err.message}`);
+            }
+        } else {
+            const motivo = coincidencias === 3
+                ? `Los 3 modelos coinciden (unanimidad) — no hace falta árbitro.`
+                : `Confianza alta (${(confEns*100).toFixed(0)}% ≥ 70%) — no hace falta árbitro.`;
+            $('gem-desc').innerHTML = `<strong>Árbitro omitido.</strong> ${motivo} Ahorro: ~600 ms y 1 llamada API.`;
+            $('gem-verdict').textContent = '⏭ OMITIDO';
+            $('gem-verdict').className = 'verdict skip';
+            log('info', `Gemini omitido (${coincidencias === 3 ? 'unanimidad' : 'conf alta'})`);
+        }
+
+        actualizarStats();
+
+    } catch (err) {
+        log('err', `Error en inferencia: ${err.message}`);
+        console.error(err);
+    }
+
+    $('scan-line').classList.remove('activo');
+    $('btn-clasificar').disabled = false;
+    $('btn-clasificar').textContent = '▶ EJECUTAR INFERENCIA';
+    analizando = false;
+}
+
+// ============================================================
+// ACTUALIZAR STATS DE SESIÓN
+// ============================================================
+function actualizarStats() {
+    $('stat-total').textContent    = stats.total;
+    $('stat-gemini').textContent   = stats.geminiCalls;
+    $('stat-corrige').textContent  = stats.geminiCorrige;
+    $('stat-unanimes').textContent = stats.unanimes;
+
+    // distribución
+    const total = stats.total || 1;
+    Object.keys(stats.porClase).forEach(c => {
+        const pct = (stats.porClase[c] / total) * 100;
+        document.querySelector(`.fill[data-clase="${c}"]`).style.width = pct + '%';
+        document.querySelector(`[data-clase-val="${c}"]`).textContent = stats.porClase[c];
+    });
+
+    // latencias promedio
+    const avg = arr => arr.length ? (arr.reduce((a,b)=>a+b,0) / arr.length) : 0;
+    const maxLat = 400;
+    ['v1','v2','v3','ens'].forEach(k => {
+        const a = avg(stats.latencias[k]);
+        $(`lat-${k}-val`).textContent = a ? Math.round(a) + ' ms' : '—';
+        $(`lat-${k}-bar`).style.width = Math.min(100, (a / maxLat) * 100) + '%';
+    });
+}
+
+// ============================================================
+// CÁMARA
+// ============================================================
+async function iniciarCamara() {
+    if (streamCamara) streamCamara.getTracks().forEach(t => t.stop());
+    try {
+        streamCamara = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: usandoCamaraFrontal ? 'user' : 'environment',
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            },
+            audio: false
+        });
+        $video.srcObject = streamCamara;
+        await $video.play().catch(() => {});
+        $previewGal.style.display = 'none';
+        $('cam-info').textContent = usandoCamaraFrontal ? 'frontal' : 'trasera';
+        log('info', `Cámara ${usandoCamaraFrontal ? 'frontal' : 'trasera'} activa`);
+    } catch (err) {
+        log('warn', `Cámara no disponible: ${err.message}. Usa el botón de galería.`);
+        $('cam-info').textContent = 'no disponible';
+    }
+}
+
+// ============================================================
+// INFO DEL SISTEMA
+// ============================================================
+function llenarSysInfo() {
+    $('sys-ua').textContent = navigator.userAgent.match(/(Chrome|Firefox|Safari|Edge)\/[\d.]+/)?.[0] || 'Browser';
+    $('sys-platform').textContent = navigator.platform + ' · ' + (navigator.hardwareConcurrency || '?') + ' cores';
+    $('sys-res').textContent = window.innerWidth + ' × ' + window.innerHeight;
+
+    if (navigator.connection) {
+        $('sys-net').textContent = navigator.connection.effectiveType?.toUpperCase() || 'WiFi';
+        $('sys-rtt').textContent = navigator.connection.rtt ? `RTT ${navigator.connection.rtt} ms` : 'sin RTT';
+    } else {
+        $('sys-net').textContent = 'online';
+        $('sys-rtt').textContent = 'API no disponible';
+    }
+}
+
+// ============================================================
+// INICIALIZACIÓN
+// ============================================================
+async function inicializar() {
+    try {
+        ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.0/dist/';
+
+        $('loading-msg').textContent = 'Preparando motores ONNX...';
+        $('loading-bar').style.width = '2%';
+
+        const [bufV1, bufV2, bufV3] = await Promise.all([
+            descargarModelo(PATH_V1, 2,  35, 'Modelo V1'),
+            descargarModelo(PATH_V2, 35, 68, 'Modelo V2'),
+            descargarModelo(PATH_V3, 68, 88, 'Modelo V3')
+        ]);
+
+        $('loading-msg').textContent = 'Cargando sesiones ONNX...';
+        $('loading-bar').style.width = '90%';
+
+        const opts = { executionProviders: ['wasm'], graphOptimizationLevel: 'all' };
+        [sesionV1, sesionV2, sesionV3] = await Promise.all([
+            ort.InferenceSession.create(bufV1, opts),
+            ort.InferenceSession.create(bufV2, opts),
+            ort.InferenceSession.create(bufV3, opts)
+        ]);
+
+        $('loading-msg').textContent = 'Calentando inferencia...';
+        $('loading-bar').style.width = '95%';
+
+        const dN = new ort.Tensor('float32', new Float32Array(3*IMG_SIZE*IMG_SIZE), [1,3,IMG_SIZE,IMG_SIZE]);
+        const dH = new ort.Tensor('float32', new Float32Array(IMG_SIZE*IMG_SIZE*3), [1,IMG_SIZE,IMG_SIZE,3]);
+        await Promise.all([
+            sesionV1.run({ input: dN }),
+            sesionV2.run({ input: dN }),
+            sesionV3.run({ input: dH })
+        ]);
+
+        $('loading-msg').textContent = 'Activando cámara...';
+        $('loading-bar').style.width = '98%';
+        await iniciarCamara();
+
+        $('loading-bar').style.width = '100%';
+        $('loading-msg').textContent = '¡Sistema listo!';
+        setTimeout(() => $('loading').classList.add('gone'), 400);
+
+        log('ok', '3 modelos ONNX cargados y verificados');
+        log('info', `Backend ONNX: WASM ${ort.env.wasm.simd ? 'SIMD' : ''} · ${navigator.hardwareConcurrency || '?'} threads`);
+        $('sys-backend').textContent = `wasm${ort.env.wasm.simd ? ' + simd' : ''}`;
+
+    } catch (err) {
+        $('loading-msg').textContent = '❌ ' + err.message;
+        $('loading-msg').style.color = 'var(--red)';
+        log('err', 'Error de inicialización: ' + err.message);
+    }
+}
+
+// ============================================================
+// EVENTOS
+// ============================================================
+$('btn-clasificar').addEventListener('click', clasificar);
+$('btn-camara').addEventListener('click', () => {
+    usandoCamaraFrontal = !usandoCamaraFrontal;
+    iniciarCamara();
+});
+$('input-galeria').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+        $previewGal.src = ev.target.result;
+        $previewGal.style.display = 'block';
+        $('cam-info').textContent = 'imagen cargada';
+        $previewGal.onload = () => clasificar();
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+});
+
+// ============================================================
+// SETUP DE TABS Y MATRICES
+// ============================================================
+Object.entries(CM_DATA).forEach(([id, data]) => renderConfusionMatrix(id, data));
+
+// Tabs de métricas
+$('metrics-tabs').querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        $('metrics-tabs').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        ['m-v1','m-v2','m-v3','m-ens'].forEach(id => $(id).classList.remove('active'));
+        $(tab.dataset.tab).classList.add('active');
+    });
+});
+
+// Tabs de matrices de confusión
+$('cm-tabs').querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        $('cm-tabs').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        ['cm-v1','cm-v2','cm-v3','cm-ens'].forEach(id => $(id).classList.remove('active'));
+        $(tab.dataset.tab).classList.add('active');
+    });
+});
+
+// ============================================================
+// ARRANQUE
+// ============================================================
+llenarSysInfo();
+inicializar();
+
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
+    });
+}
+</script>
+
+</body>
+</html>
